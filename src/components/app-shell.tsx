@@ -24,7 +24,6 @@ import { MeetingPanel } from "./panels/meeting-panel";
 import { SettingsPanel } from "./panels/settings-panel";
 import { EvidenceModal } from "./modals/evidence-modal";
 import { GrowthModal } from "./modals/growth-modal";
-import { ProjectDocsModal } from "./modals/project-docs-modal";
 import { CommandMenu } from "./overlays/command-menu";
 import { ProactiveCard } from "./overlays/proactive-card";
 import { UIContext, type UIActions } from "./ui-context";
@@ -116,7 +115,6 @@ type PanelState =
 type ModalState =
   | { type: "evidence"; id: string }
   | { type: "growth" }
-  | { type: "projectDocs"; projectId: string }
   | null;
 
 let idSeq = 0;
@@ -157,6 +155,19 @@ export function AppShell() {
   const activeProject = activeConv?.projectId
     ? projects.find((p) => p.id === activeConv.projectId) ?? null
     : null;
+
+  /* 在右侧打开具体产物文档 (零弹窗直达) */
+  const openArtifactInCanvas = useCallback(
+    (art: import("@/lib/types").ProjectArtifact) => {
+      setActiveCanvas({
+        id: art.id,
+        title: art.title,
+        content: art.content,
+        updatedAt: art.updatedAt,
+      });
+    },
+    []
+  );
 
   /* 检查并唤出 Canvas */
   const openDefaultCanvas = useCallback((title = "招聘 Agent v2 PRD 核心方案.md") => {
@@ -421,7 +432,14 @@ export function AppShell() {
   const ui: UIActions = {
     openPerson: (id) => setPanel({ type: "person", id }),
     openProject: (id) => setPanel({ type: "project", id }),
-    openProjectDocs: (projectId) => setModal({ type: "projectDocs", projectId }),
+    openProjectDocs: (projectId) => {
+      const p = projects.find((x) => x.id === projectId);
+      if (p?.artifacts?.[0]) {
+        openArtifactInCanvas(p.artifacts[0]);
+      } else {
+        openDefaultCanvas();
+      }
+    },
     openMeeting: () => setPanel({ type: "meeting" }),
     openEvidence: (id) => setModal({ type: "evidence", id }),
     openGrowth: () => setModal({ type: "growth" }),
@@ -480,10 +498,23 @@ export function AppShell() {
             onToggleSidebar={() => setSidebarCollapsed(false)}
             canvasOpen={Boolean(activeCanvas)}
             onToggleCanvas={() => {
-              if (activeCanvas) setActiveCanvas(null);
-              else openDefaultCanvas();
+              if (activeCanvas) {
+                setActiveCanvas(null);
+              } else {
+                const firstArt = activeProject?.artifacts?.[0];
+                if (firstArt) openArtifactInCanvas(firstArt);
+                else openDefaultCanvas();
+              }
             }}
             project={activeProject}
+            activeCanvasId={activeCanvas?.id}
+            onSelectArtifact={(art) => {
+              if (activeCanvas?.id === art.id) {
+                setActiveCanvas(null);
+              } else {
+                openArtifactInCanvas(art);
+              }
+            }}
           />
 
           <main className="flex min-h-0 flex-1 overflow-hidden">
@@ -505,6 +536,13 @@ export function AppShell() {
             {activeCanvas && (
               <MdCanvas
                 doc={activeCanvas}
+                artifacts={activeProject?.artifacts}
+                onSelectArtifact={openArtifactInCanvas}
+                onNewArtifact={() => {
+                  ask(
+                    `请为当前项目「${activeProject?.name || "当前项目"}」打磨一份新方案大纲骨架（PRD Skeleton）与预期业务解法，给出规范的 YAML 头部。`
+                  );
+                }}
                 onChange={(content) => {
                   setActiveCanvas((prev) =>
                     prev ? { ...prev, content, updatedAt: "刚刚" } : null,
@@ -578,20 +616,6 @@ export function AppShell() {
       )}
       {modal?.type === "growth" && (
         <GrowthModal onClose={() => setModal(null)} />
-      )}
-      {modal?.type === "projectDocs" && projectById(modal.projectId, projects) && (
-        <ProjectDocsModal
-          project={projectById(modal.projectId, projects)!}
-          onClose={() => setModal(null)}
-          onOpenInCanvas={(art) => {
-            setActiveCanvas({
-              id: art.id,
-              title: art.title,
-              content: art.content,
-              updatedAt: art.updatedAt,
-            });
-          }}
-        />
       )}
 
       {/* Layer 0 · ⌘K 检索 */}

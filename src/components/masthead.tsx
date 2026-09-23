@@ -15,6 +15,8 @@ export function Masthead({
   canvasOpen,
   onToggleCanvas,
   project,
+  activeCanvasId,
+  onSelectArtifact,
 }: {
   notifOpen: boolean;
   setNotifOpen: (v: boolean) => void;
@@ -24,6 +26,8 @@ export function Masthead({
   canvasOpen?: boolean;
   onToggleCanvas?: () => void;
   project?: Project | null;
+  activeCanvasId?: string;
+  onSelectArtifact?: (art: import("@/lib/types").ProjectArtifact) => void;
 }) {
   const ui = useUI();
 
@@ -69,18 +73,40 @@ export function Masthead({
           )}
         </div>
 
-        {/* 右侧：通知、文档库、Canvas 开关与用户菜单 */}
+        {/* 右侧：直接写出文档名字（点击即在右侧展开，绝无弹窗）、通知与用户菜单 */}
         <div className="relative flex items-center gap-2 shrink-0">
-          {project && (
-            <button
-              type="button"
-              onClick={() => ui.openProjectDocs(project.id)}
-              className="flex items-center gap-1.5 border border-rule bg-paper px-2.5 py-1 font-serif text-[12px] text-ink-soft transition-colors hover:border-ink hover:text-ink"
-              title="统一管理该项目下的 PRD、竞品与复盘活文档"
-            >
-              <BookOpen className="size-3.5 text-accent" strokeWidth={1.5} />
-              <span>文档库 ({project.artifacts?.length ?? 0})</span>
-            </button>
+          {project?.artifacts && project.artifacts.length > 0 && (
+            <div className="hidden sm:flex items-center gap-1.5 border-r border-rule pr-2.5">
+              <span className="font-mono text-[9px] uppercase tracking-wider text-ink-mute">
+                文档:
+              </span>
+              {project.artifacts.map((art) => {
+                const isActive = canvasOpen && activeCanvasId === art.id;
+                return (
+                  <button
+                    key={art.id}
+                    type="button"
+                    onClick={() => onSelectArtifact?.(art)}
+                    className={`group flex items-center gap-1.5 border px-2.5 py-1 font-serif text-[12px] transition-colors ${
+                      isActive
+                        ? "border-accent bg-paper-deep font-semibold text-accent"
+                        : "border-rule bg-paper text-ink-soft hover:border-ink hover:text-ink hover:bg-paper-warm"
+                    }`}
+                    title={`在右侧打开「${art.title}」`}
+                  >
+                    <FileText
+                      className={`size-3 transition-colors ${
+                        isActive ? "text-accent" : "text-ink-mute group-hover:text-accent"
+                      }`}
+                      strokeWidth={1.5}
+                    />
+                    <span className="truncate max-w-[100px] md:max-w-[130px]">
+                      {art.title}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           )}
           {onToggleCanvas && (
             <button

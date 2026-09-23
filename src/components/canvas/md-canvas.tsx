@@ -7,10 +7,12 @@ import {
   FileText,
   Maximize2,
   Minimize2,
+  Plus,
   Quote,
   Sparkles,
   X,
 } from "lucide-react";
+import type { ProjectArtifact } from "@/lib/types";
 
 export interface CanvasDoc {
   id: string;
@@ -24,11 +26,17 @@ export function MdCanvas({
   onChange,
   onClose,
   onAskAI,
+  artifacts,
+  onSelectArtifact,
+  onNewArtifact,
 }: {
   doc: CanvasDoc;
   onChange: (content: string) => void;
   onClose: () => void;
   onAskAI?: (prompt: string) => void;
+  artifacts?: ProjectArtifact[];
+  onSelectArtifact?: (art: ProjectArtifact) => void;
+  onNewArtifact?: () => void;
 }) {
   const [copied, setCopied] = useState(false);
   const [fullWidth, setFullWidth] = useState(false);
@@ -203,15 +211,53 @@ export function MdCanvas({
     >
       {/* 顶部工具条 */}
       <header className="flex h-12 shrink-0 items-center justify-between border-b border-rule bg-paper-warm/50 px-4">
-        <div className="flex items-center gap-2 min-w-0">
-          <FileText className="size-4 shrink-0 text-accent" strokeWidth={1.5} />
-          <span className="truncate font-serif text-[13.5px] font-bold text-ink">
-            {doc.title}
-          </span>
-          <span className="shrink-0 font-mono text-[10px] text-ink-mute">
-            · {wordCount} 字
-          </span>
-        </div>
+        {artifacts && artifacts.length > 0 ? (
+          <div className="flex items-center gap-1 min-w-0 overflow-x-auto py-1">
+            {artifacts.map((art) => {
+              const isCurrent = doc.id === art.id;
+              return (
+                <button
+                  key={art.id}
+                  type="button"
+                  onClick={() => onSelectArtifact?.(art)}
+                  className={`flex shrink-0 items-center gap-1.5 border px-2.5 py-1 font-serif text-[12px] transition-colors ${
+                    isCurrent
+                      ? "border-accent bg-paper font-semibold text-accent shadow-xs"
+                      : "border-transparent bg-transparent text-ink-soft hover:border-rule hover:bg-paper-deep/60 hover:text-ink"
+                  }`}
+                  title={art.title}
+                >
+                  <FileText
+                    className={`size-3 ${isCurrent ? "text-accent" : "text-ink-mute"}`}
+                    strokeWidth={1.5}
+                  />
+                  <span className="truncate max-w-[120px] sm:max-w-[140px]">{art.title}</span>
+                </button>
+              );
+            })}
+            {onNewArtifact && (
+              <button
+                type="button"
+                onClick={onNewArtifact}
+                className="flex shrink-0 items-center gap-1 border border-dashed border-rule px-2 py-0.5 font-serif text-[11px] text-ink-mute transition-colors hover:border-accent hover:text-accent"
+                title="让 AI 围绕当前项目生成新方案大纲骨架"
+              >
+                <Plus className="size-3" strokeWidth={1.5} />
+                <span>新方案骨架</span>
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 min-w-0">
+            <FileText className="size-4 shrink-0 text-accent" strokeWidth={1.5} />
+            <span className="truncate font-serif text-[13.5px] font-bold text-ink">
+              {doc.title}
+            </span>
+            <span className="shrink-0 font-mono text-[10px] text-ink-mute">
+              · {wordCount} 字
+            </span>
+          </div>
+        )}
 
         <div className="flex items-center gap-1.5 shrink-0">
           {onAskAI && (
