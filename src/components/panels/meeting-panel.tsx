@@ -121,6 +121,98 @@ export function MeetingPanel() {
           </p>
         </section>
 
+        {/* 多方连环追问模拟 */}
+        <section className="space-y-3.5">
+          <div className="flex items-center justify-between">
+            <SectionTitle>多方连环追问模拟 · Q&A DRILL</SectionTitle>
+            <span className="font-mono text-[10px] text-accent">提前推演 · 临场不慌</span>
+          </div>
+
+          <p className="font-serif text-[13px] leading-relaxed text-ink-soft">
+            评审会上领导与产研关注维度截然不同。旁白基于各方世界模型与行为模式，提前推演最尖锐的连环质询：
+          </p>
+
+          <div className="space-y-3">
+            {/* 王总追问 */}
+            <div className="border border-rule bg-paper-warm/80 p-4 shadow-2xs">
+              <div className="flex items-center justify-between border-b border-rule/60 pb-2">
+                <div className="flex items-center gap-2">
+                  <Avatar char="王" size="sm" />
+                  <span className="font-serif text-[14px] font-bold text-ink">王总 · 考察确定性与兜底预案</span>
+                </div>
+                <span className="border border-vermilion/30 bg-vermilion/10 px-2 py-0.5 font-mono text-[9.5px] text-vermilion">
+                  高频卡点
+                </span>
+              </div>
+              <blockquote className="my-2.5 border-l-2 border-vermilion/70 pl-3 font-serif text-[13.5px] font-medium leading-relaxed text-ink">
+                「周五前要是联调出问题，你打算怎么向客户交代？有没有最坏打算的保底版本？」
+              </blockquote>
+              <div className="mt-2 text-[12.5px] leading-relaxed text-ink-soft">
+                <span className="font-semibold text-accent">旁白解法：</span>
+                切忌泛泛保证或推脱。先接住客户压力，给出明确的保底版本「方案 A 保核心链路打通演示，规则兜底边缘指标；方案 B 下周完整交付」。
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  ui.closePanel();
+                  ui.startRehearsalWithScenario?.({
+                    title: "应对王总关于客户交付底线的质询",
+                    personName: "王总",
+                    initialQuestion: "周五前要是联调出问题，你打算怎么向客户交代？有没有最坏打算的保底版本？",
+                    turns: [
+                      "（紧盯你的眼神）方案 A 保底……客户最在意的核心打分链路能确保稳妥吗？",
+                      "好。今天下班前把方案 A 的保底演练录屏发我看一下。下次有风险早点同步。",
+                    ],
+                    coachingHint: "提示：先认领交付责任，直接给出方案 A 保核心链路与时间点，绝不找客观借口。",
+                  });
+                }}
+                className="mt-3 inline-flex items-center gap-1.5 border border-ink/30 bg-paper px-3 py-1.5 font-serif text-[12px] font-semibold text-ink transition-colors hover:border-accent hover:text-accent hover:bg-paper-deep"
+              >
+                <span>🎭 模拟演练向王总汇报兜底预案</span>
+              </button>
+            </div>
+
+            {/* 李总追问 */}
+            <div className="border border-rule bg-paper-warm/80 p-4 shadow-2xs">
+              <div className="flex items-center justify-between border-b border-rule/60 pb-2">
+                <div className="flex items-center gap-2">
+                  <Avatar char="李" size="sm" />
+                  <span className="font-serif text-[14px] font-bold text-ink">李总 · 考察技术架构与工期取舍</span>
+                </div>
+                <span className="border border-accent/40 bg-accent/10 px-2 py-0.5 font-mono text-[9.5px] text-accent">
+                  技术对齐
+                </span>
+              </div>
+              <blockquote className="my-2.5 border-l-2 border-accent pl-3 font-serif text-[13.5px] font-medium leading-relaxed text-ink">
+                「你提的这个实时状态同步，会不会拖垮主库性能？如果研发评估要增加两周工期，你怎么砍功能？」
+              </blockquote>
+              <div className="mt-2 text-[12.5px] leading-relaxed text-ink-soft">
+                <span className="font-semibold text-accent">旁白解法：</span>
+                李总重视技术完整性与严谨。沟通时必须带上技术取舍（Trade-off），主动提出「首期采用异步轻量轮询，暂缓复杂多人协作态，保障工期不超」。
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  ui.closePanel();
+                  ui.startRehearsalWithScenario?.({
+                    title: "应对李总关于技术架构与工期取舍的对齐",
+                    personName: "李总",
+                    initialQuestion: "你提的这个实时状态同步，会不会拖垮主库性能？如果研发评估要增加两周工期，你怎么砍功能？",
+                    turns: [
+                      "异步轮询可以减少主库压力。那跨端状态一致性你怎么兜底？",
+                      "行，这个技术取舍合理。会后你出一版精简架构方案备忘，我们在群里敲定。",
+                    ],
+                    coachingHint: "提示：用方案取舍（Trade-off）说话，主动提出砍掉非核心协作态，保住核心性能。",
+                  });
+                }}
+                className="mt-3 inline-flex items-center gap-1.5 border border-ink/30 bg-paper px-3 py-1.5 font-serif text-[12px] font-semibold text-ink transition-colors hover:border-accent hover:text-accent hover:bg-paper-deep"
+              >
+                <span>🎭 模拟演练与李总对齐架构取舍</span>
+              </button>
+            </div>
+          </div>
+        </section>
+
         {/* 相关项目 */}
         {project && (
           <section className="space-y-3">

@@ -501,6 +501,16 @@ const DEMO_MESSAGES: ChatMessage[] = [
         text: "王总，这块我没提前同步，是我的问题。\n目前卡在数据标注，预计周四能出初版。\n之后我每天同步一次进度，有变化第一时间说。",
       },
       { kind: "para", text: "要不要我帮你想想，他接下来会追问什么？" },
+      {
+        kind: "memory_candidate",
+        candidateId: "mem-init-wang",
+        personId: "wang",
+        personName: "王总",
+        observation: "王总对「临近才暴露风险」反应强烈，深层诉求是提前获知不确定性并掌控时间线。",
+        pattern: "偏好提前同步风险（极度排斥被动获知）",
+        confidence: 82,
+        targetScene: "群聊追问为什么还没做完",
+      },
       { kind: "actions" },
       { kind: "source" },
     ],
@@ -596,7 +606,71 @@ export const INITIAL_CONVERSATIONS: Conversation[] = [
 ];
 
 /* 发送后旁白的演示回复（模拟真实 Chatbot 结构化回复） */
+/* 发送后旁白的演示回复（模拟真实 Chatbot 结构化回复，支持方案骨架生成与记忆预提炼确认） */
 export const CANNED_REPLIES: { blocks: import("./types").Block[] }[] = [
+  {
+    blocks: [
+      {
+        kind: "para",
+        dropcap: true,
+        text: "打磨高质量 PRD 的核心是「**先敲定预期业务方案与取舍（Trade-off），再补齐架构细节**」。我已经为你梳理了预期做成什么方案，并生成了挂载 YAML 规范的 PRD 大体架构骨架：",
+      },
+      {
+        kind: "artifact_suggestion",
+        title: "招聘 Agent v2 核心方案与 PRD 骨架.md",
+        artifactType: "prd",
+        description: "围绕初筛提效 40% 的业务目标，确立方案 A（保期交付核心打分）与方案 B（全量延迟交付）的决策树，包含完整的项目元数据与排期约束。",
+        docContent: `---
+title: "招聘 Agent v2 核心方案与 PRD 骨架"
+type: "prd"
+date: "2026-09-23"
+progress: "draft"
+stakeholders: ["王总", "李总", "张明"]
+version: "v2.0-draft"
+expected_solution: "核心落地「简历智能解析 + 关键胜任力打分」，次要标签先用规则兜底，保障周四按时向客户演示"
+risk_points: ["样本标注延期3天", "跨部门接口联调环境不稳定"]
+notes: "本周四需向王总与客户演示，务必把控边界"
+---
+
+# 招聘 Agent v2 核心方案与排期备忘
+
+## 1. 业务背景与预期做成什么方案
+- **核心目标**：将招聘顾问初筛效率提升 40%，周四需向王总与客户演示初版。
+- **预期方案定位**：轻量级 AI 初筛助手，优先跑通「简历结构化解析 -> 核心能力打分 -> 生成推荐理由」最小闭环。
+
+## 2. 方案与取舍（Trade-off 对比）
+- **方案 A（保期交付核心链路 · 推荐）**：
+  优先打通「简历解析 + 核心能力打分」，次要标签与深度画像暂用规则兜底。可保证周四如期向客户演示，风险可控。
+- **方案 B（全量精准交付）**：
+  等待全部数据标注完毕再行评估，交付整体延后至下周二。
+
+## 3. 功能架构与数据流转
+- 输入层：PDF / Word 格式简历多模态解析。
+- 评分层：向量检索匹配岗位 JD 核心关键词，输出 0-100 综合分。
+- 兜底层：当网络超时（>3s）自动降级返回规则候选集。
+
+## 4. 向上沟通与跨部门协同备忘
+- 今晚下班前向 [王总](person:wang) 主动同步方案 A 保底进展。
+- 明天与 [李总](person:li) 敲定接口削峰降级方案，争取免去复杂鉴权中间件。
+`,
+      },
+      {
+        kind: "memory_candidate",
+        candidateId: "mem-wang-prd",
+        personId: "wang",
+        personName: "王总",
+        observation: "在面对排期阻力时，比起乐观承诺，更看重有无防守性的降级预案与确切同步时间。",
+        pattern: "极其看重兜底保底方案（降级策略），反感盲目乐观",
+        confidence: 85,
+        targetScene: "招聘 Agent v2 方案评审",
+      },
+      {
+        kind: "para",
+        text: "右侧 Canvas 已为你自动打开排版预览，右上方可一键切换「预览 / 编辑」模式；在正文中选中任意文字均可按 **⌘L** 快速引用回对话进行微调。",
+      },
+      { kind: "actions" },
+    ],
+  },
   {
     blocks: [
       {
@@ -611,13 +685,24 @@ export const CANNED_REPLIES: { blocks: import("./types").Block[] }[] = [
       {
         kind: "quote",
         label: "建议回复话术 · SUGGESTED REPLY",
-        text: "收到王总，这块我在盯紧攻坚，今天下班前我把进度细节与后续时间表单独同步您。",
+        text: "王总，这块我没提前同步，是我的问题。\n目前卡在数据标注，预计周四能出初版。\n之后我每天同步一次进度，有变化第一时间说。",
+      },
+      {
+        kind: "memory_candidate",
+        candidateId: "mem-wang-sync",
+        personId: "wang",
+        personName: "王总",
+        observation: "王总在群聊中直截了当质询进度，深层担忧是临近演示才发现风险。",
+        pattern: "偏好提前同步风险，极其看重主动性",
+        confidence: 86,
+        targetScene: "项目群聊进度质询",
       },
       {
         kind: "para",
         text: "群里给领导台阶，细节转移到私下复核。需要我帮你演练接下来王总可能的追问吗？",
       },
       { kind: "actions" },
+      { kind: "source" },
     ],
   },
   {
@@ -625,11 +710,11 @@ export const CANNED_REPLIES: { blocks: import("./types").Block[] }[] = [
       {
         kind: "para",
         dropcap: true,
-        text: "我梳理了一下当前的情况：这件事的核心不在动作快慢，而在于信息传递的时机。",
+        text: "我梳理了一下当前的情况：和[李总](person:li)沟通，核心不在催促进度，而在信息传递的专业度与技术取舍。",
       },
       {
         kind: "para",
-        text: "参考[李总](person:li)的沟通习惯，对齐排期时一定要带上方案的技术取舍，而不是单单抛出阻碍点。",
+        text: "参考[李总](person:li)的技术背景，对齐排期时一定要带上方案的技术 Trade-off，把单选题变成带有掌控感的多选题。",
       },
       {
         kind: "quote",
@@ -637,8 +722,18 @@ export const CANNED_REPLIES: { blocks: import("./types").Block[] }[] = [
         text: "李总，目前受限于联调环境。方案A保核心链路可如期推进；方案B全量交付需多等两天。您看先按方案A跑如何？",
       },
       {
+        kind: "memory_candidate",
+        candidateId: "mem-li-tech",
+        personId: "li",
+        personName: "李总",
+        observation: "李总对直接要求研发加班排期较为反感，但对附带技术取舍的备选方案接受度极高。",
+        pattern: "重视技术完整性与方案取舍（Trade-off），偏好结构化备选",
+        confidence: 89,
+        targetScene: "跨部门排期对齐会",
+      },
+      {
         kind: "para",
-        text: "把单选题变成带有取舍的选择题，把掌控感交还给对方，沟通阻力会降低很多。",
+        text: "把掌控感交还给对方，沟通阻力会降低很多。你可以在会议面板查看针对李总的可能追问推演。",
       },
       { kind: "actions" },
     ],

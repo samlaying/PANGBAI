@@ -132,7 +132,25 @@ export type Block =
   | { kind: "actions" }
   | { kind: "source" }
   | { kind: "evidence" }
-  | { kind: "divider" };
+  | { kind: "divider" }
+  | {
+      kind: "artifact_suggestion";
+      title: string;
+      artifactType: ArtifactType;
+      docContent: string;
+      description?: string;
+    }
+  | {
+      kind: "memory_candidate";
+      candidateId: string;
+      personId: string;
+      personName: string;
+      observation: string;
+      pattern: string;
+      confidence: number;
+      targetScene: string;
+      quote?: string;
+    };
 
 export type ChatMessage =
   | { id: string; role: "user"; time: string; text: string }

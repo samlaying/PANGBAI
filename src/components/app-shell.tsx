@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Block, ChatMessage, Conversation, Project } from "@/lib/types";
+import type { Block, ChatMessage, Conversation, Person, Project } from "@/lib/types";
 import {
   CANNED_REPLIES,
   INITIAL_CONVERSATIONS,
+  PEOPLE,
   PROJECTS,
   personById,
   projectById,
@@ -13,7 +14,7 @@ import { Masthead } from "./masthead";
 import { Sidebar } from "./sidebar";
 import { BottomNav, type NavKey } from "./bottom-nav";
 import { Composer } from "./composer";
-import { ChatFlow } from "./chat/chat-flow";
+import { ChatFlow, type RehearsalScenario } from "./chat/chat-flow";
 import { EmptyState } from "./chat/empty-state";
 import { MdCanvas, type CanvasDoc } from "./canvas/md-canvas";
 import { SidePanelShell } from "./panels/side-panel";
@@ -28,15 +29,27 @@ import { CommandMenu } from "./overlays/command-menu";
 import { ProactiveCard } from "./overlays/proactive-card";
 import { UIContext, type UIActions } from "./ui-context";
 
-const DEFAULT_PRD_CONTENT = `# 招聘 Agent v2 核心方案与排期备忘
+const DEFAULT_PRD_CONTENT = `---
+title: "招聘 Agent v2 核心方案与排期备忘"
+type: "prd"
+date: "2026-09-23"
+progress: "draft"
+stakeholders: ["王总", "李总", "张明"]
+version: "v2.0-draft"
+expected_solution: "落地「简历结构化解析 + 关键胜任力打分」，次要字段规则兜底，确保周四向王总与客户顺利演示"
+risk_points: ["数据标注延期3天", "跨部门接口联调环境不稳定"]
+notes: "本周四向王总与客户演示初版，重点把控交付确定性"
+---
 
-## 1. 业务背景与预期
-- 目标：将初筛效率提升 40%，周四需向王总与客户演示初版。
-- 现状卡点：数据标注由于样本复杂性延期 3 天，当前综合进度 65%。
+# 招聘 Agent v2 核心方案与排期备忘
+
+## 1. 业务背景与预期做成什么方案
+- **目标**：将初筛效率提升 40%，周四需向王总与客户演示初版。
+- **现状卡点**：数据标注由于样本复杂性延期 3 天，当前综合进度 65%。
 
 ## 2. 方案与取舍（Trade-off）
-- **方案 A（保期交付核心链路）**：
-  优先打通「简历解析 + 核心能力打分」，次要字段暂用规则兜底。可保证周四如期演示。
+- **方案 A（保期交付核心链路 · 推荐）**：
+  优先打通「简历解析 + 核心能力打分」，次要字段暂用规则兜底。可保证周四如期向客户演示。
 - **方案 B（全量精准交付）**：
   等待全部标注完毕再行评估，交付整体延后至下周二。
 
@@ -45,8 +58,44 @@ const DEFAULT_PRD_CONTENT = `# 招聘 Agent v2 核心方案与排期备忘
 - 与李总对齐接口技术取舍，争取后端去重中间件支持。
 `;
 
-function parseMarkdownToBlocks(content: string): Block[] {
+function parseMarkdownToBlocks(
+  content: string,
+  onArtifactDetected?: (title: string, docContent: string) => void,
+): Block[] {
   const blocks: Block[] = [];
+
+  // 识别结构化 PRD / 方案骨架（含 YAML Frontmatter）
+  const yamlMatch = content.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
+  if (yamlMatch) {
+    const rawYaml = yamlMatch[1];
+    const titleMatch = rawYaml.match(/title:\s*["']?([^"'\n]+)["']?/);
+    const typeMatch = rawYaml.match(/type:\s*["']?([^"'\n]+)["']?/);
+    const solutionMatch = rawYaml.match(/expected_solution:\s*["']?([^"'\n]+)["']?/);
+
+    const docTitle = titleMatch ? titleMatch[1].trim() : "项目需求方案与架构骨架.md";
+    const docType = (typeMatch ? typeMatch[1].trim() : "prd") as import("@/lib/types").ArtifactType;
+
+    blocks.push({
+      kind: "para",
+      dropcap: true,
+      text: "根据你的要求，我已经为你梳理了预期业务解法并生成了挂载 YAML 规范的大体架构骨架：",
+    });
+
+    blocks.push({
+      kind: "artifact_suggestion",
+      title: docTitle,
+      artifactType: docType,
+      description: solutionMatch
+        ? `预期方案：${solutionMatch[1].trim()}`
+        : "包含完整的项目元数据与各模块骨架，便于直接补充细节",
+      docContent: content,
+    });
+
+    onArtifactDetected?.(docTitle, content);
+    blocks.push({ kind: "actions" });
+    return blocks;
+  }
+
   const lines = content.split("\n");
   let currentQuote: string[] = [];
   let currentPara: string[] = [];
@@ -135,6 +184,8 @@ export function AppShell() {
   const [commandOpen, setCommandOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [rehearsal, setRehearsal] = useState(false);
+  const [rehearsalScenario, setRehearsalScenario] =
+    useState<RehearsalScenario | null>(null);
   const [proactive, setProactive] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [activeCanvas, setActiveCanvas] = useState<CanvasDoc | null>(null);
@@ -143,6 +194,7 @@ export function AppShell() {
     useState<Conversation[]>(INITIAL_CONVERSATIONS);
   const [activeConvId, setActiveConvId] = useState(INITIAL_CONVERSATIONS[0].id);
   const [projects, setProjects] = useState<Project[]>(PROJECTS);
+  const [people, setPeople] = useState<Person[]>(PEOPLE);
   const [projectCreateSignal, setProjectCreateSignal] = useState(0);
 
   const [typing, setTyping] = useState(false);
@@ -178,6 +230,83 @@ export function AppShell() {
       updatedAt: "刚刚",
     });
   }, []);
+
+  /* 载入具体内容并直接在右侧打开 Canvas 工作区 */
+  const loadCanvasDoc = useCallback((title: string, content: string) => {
+    setActiveCanvas({
+      id: `doc-${Date.now()}`,
+      title,
+      content,
+      updatedAt: "刚刚",
+    });
+  }, []);
+
+  /* 确认把 AI 提前提炼的记忆沉淀到世界模型中 */
+  const confirmMemory = useCallback(
+    (data: {
+      personId: string;
+      pattern: string;
+      observation: string;
+      confidence: number;
+      scene?: string;
+    }) => {
+      setPeople((prev) =>
+        prev.map((person) => {
+          if (person.id !== data.personId) return person;
+          const existingIdx = person.patterns.findIndex(
+            (p) => p.pattern === data.pattern,
+          );
+          let updatedPatterns = [...person.patterns];
+          if (existingIdx >= 0) {
+            updatedPatterns[existingIdx] = {
+              ...updatedPatterns[existingIdx],
+              confidence: Math.max(
+                updatedPatterns[existingIdx].confidence,
+                data.confidence,
+              ),
+              evidenceCount: updatedPatterns[existingIdx].evidenceCount + 1,
+              lastObserved: "刚刚",
+            };
+          } else {
+            updatedPatterns.unshift({
+              pattern: data.pattern,
+              confidence: data.confidence,
+              evidenceCount: 1,
+              lastObserved: "刚刚",
+            });
+          }
+
+          const newEvidenceItem = {
+            id: `ev-confirmed-${Date.now()}`,
+            date: "刚刚",
+            scene: data.scene || "当前项目协同对话",
+            source: "对话沉淀",
+            person: person.name,
+            project: activeProject?.name || "当前项目",
+            record: `用户确认了 AI 针对 ${person.name} 提炼的行为模式：「${data.pattern}」`,
+            observation: data.observation,
+            pattern: data.pattern,
+            patternConfidence: data.confidence,
+          };
+
+          return {
+            ...person,
+            patterns: updatedPatterns,
+            evidence: [newEvidenceItem, ...person.evidence],
+          };
+        }),
+      );
+    },
+    [activeProject?.name],
+  );
+
+  const startRehearsalWithScenario = useCallback(
+    (scenario: RehearsalScenario) => {
+      setRehearsalScenario(scenario);
+      setRehearsal(true);
+    },
+    [],
+  );
 
   /* 主动提醒：6 秒后安静浮出 */
   useEffect(() => {
@@ -230,16 +359,18 @@ export function AppShell() {
     async (text: string) => {
       const convId = activeConvId;
 
-      // 关键词检测：按需自动唤出 Canvas（写 PRD、撰写方案、会议纪要）
+      // 关键词检测：按需自动唤出 Canvas（写 PRD、撰写方案、大纲、骨架、会议纪要）
       const lower = text.toLowerCase();
-      if (
-        !activeCanvas &&
-        (lower.includes("prd") ||
-          lower.includes("方案") ||
-          lower.includes("需求") ||
-          lower.includes("会议纪要") ||
-          lower.includes("备忘"))
-      ) {
+      const isDocIntent =
+        lower.includes("prd") ||
+        lower.includes("方案") ||
+        lower.includes("需求") ||
+        lower.includes("会议纪要") ||
+        lower.includes("备忘") ||
+        lower.includes("大纲") ||
+        lower.includes("骨架");
+
+      if (isDocIntent && !activeCanvas) {
         openDefaultCanvas();
       }
 
@@ -327,7 +458,12 @@ export function AppShell() {
           if (done) break;
           const chunk = decoder.decode(value, { stream: true });
           streamAccumulator += chunk;
-          const parsedBlocks = parseMarkdownToBlocks(streamAccumulator);
+          const parsedBlocks = parseMarkdownToBlocks(
+            streamAccumulator,
+            (title, docContent) => {
+              loadCanvasDoc(title, docContent);
+            },
+          );
 
           patchConversation(convId, (c) => ({
             ...c,
@@ -341,7 +477,12 @@ export function AppShell() {
       } catch (err) {
         console.warn("API fallback to canned reply:", err);
         setTyping(false);
-        const reply = CANNED_REPLIES[cannedIdx.current % CANNED_REPLIES.length];
+        let replyIndex = cannedIdx.current % CANNED_REPLIES.length;
+        if (isDocIntent) {
+          replyIndex = 0; // PRD 骨架 & 记忆预提炼确认卡
+          openDefaultCanvas();
+        }
+        const reply = CANNED_REPLIES[replyIndex];
         cannedIdx.current += 1;
         patchConversation(convId, (c) => ({
           ...c,
@@ -361,7 +502,9 @@ export function AppShell() {
       activeConvId,
       activeCanvas,
       conversations,
+      projects,
       openDefaultCanvas,
+      loadCanvasDoc,
       patchConversation,
     ],
   );
@@ -450,9 +593,13 @@ export function AppShell() {
     ask,
     startRehearsal: () => {
       setModal(null);
+      setRehearsalScenario(null);
       setRehearsal(true);
     },
+    startRehearsalWithScenario,
     createProject,
+    loadCanvasDoc,
+    confirmMemory,
   };
 
   const navActive: NavKey =
@@ -527,7 +674,11 @@ export function AppShell() {
                   messages={messages}
                   typing={typing}
                   rehearsal={rehearsal}
-                  onExitRehearsal={() => setRehearsal(false)}
+                  rehearsalScenario={rehearsalScenario}
+                  onExitRehearsal={() => {
+                    setRehearsal(false);
+                    setRehearsalScenario(null);
+                  }}
                 />
               )}
             </div>
@@ -581,10 +732,15 @@ export function AppShell() {
       {panel && (
         <SidePanelShell onClose={() => setPanel(null)}>
           <div key={JSON.stringify(panel)} className="anim-fade flex h-full flex-col">
-            {panel.type === "person" && personById(panel.id) && (
-              <PersonPanel person={personById(panel.id)!} />
+            {panel.type === "person" && (
+              <PersonPanel
+                person={
+                  people.find((p) => p.id === panel.id) ||
+                  personById(panel.id)!
+                }
+              />
             )}
-            {panel.type === "people" && <PeoplePanel />}
+            {panel.type === "people" && <PeoplePanel people={people} />}
             {panel.type === "project" && projectById(panel.id, projects) && (
               <ProjectPanel project={projectById(panel.id, projects)!} />
             )}

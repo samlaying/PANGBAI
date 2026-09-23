@@ -2,13 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { ChevronRight, Plus } from "lucide-react";
-import type { Project } from "@/lib/types";
+import type { Person, Project } from "@/lib/types";
 import { PEOPLE } from "@/lib/mock-data";
 import { useUI } from "../ui-context";
 import { Avatar, SolidButton, GhostButton } from "../atoms";
 import { PanelBody, PanelHeader } from "./side-panel";
 
-export function PeoplePanel() {
+export function PeoplePanel({ people = PEOPLE }: { people?: Person[] } = {}) {
   const ui = useUI();
   return (
     <>
@@ -19,7 +19,7 @@ export function PeoplePanel() {
       </PanelHeader>
       <PanelBody>
         <ul>
-          {PEOPLE.map((p) => (
+          {people.map((p) => (
             <li key={p.id} className="border-b border-rule last:border-0">
               <button
                 type="button"
