@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ChatMessage, Conversation, Project } from "@/lib/types";
+import type { Block, ChatMessage, Conversation, Project } from "@/lib/types";
 import {
   CANNED_REPLIES,
   INITIAL_CONVERSATIONS,
@@ -15,6 +15,7 @@ import { BottomNav, type NavKey } from "./bottom-nav";
 import { Composer } from "./composer";
 import { ChatFlow } from "./chat/chat-flow";
 import { EmptyState } from "./chat/empty-state";
+import { MdCanvas, type CanvasDoc } from "./canvas/md-canvas";
 import { SidePanelShell } from "./panels/side-panel";
 import { PersonPanel } from "./panels/person-panel";
 import { PeoplePanel, ProjectsPanel } from "./panels/list-panels";
@@ -26,6 +27,81 @@ import { GrowthModal } from "./modals/growth-modal";
 import { CommandMenu } from "./overlays/command-menu";
 import { ProactiveCard } from "./overlays/proactive-card";
 import { UIContext, type UIActions } from "./ui-context";
+
+const DEFAULT_PRD_CONTENT = `# 招聘 Agent v2 核心方案与排期备忘
+
+## 1. 业务背景与预期
+- 目标：将初筛效率提升 40%，周四需向王总与客户演示初版。
+- 现状卡点：数据标注由于样本复杂性延期 3 天，当前综合进度 65%。
+
+## 2. 方案与取舍（Trade-off）
+- **方案 A（保期交付核心链路）**：
+  优先打通「简历解析 + 核心能力打分」，次要字段暂用规则兜底。可保证周四如期演示。
+- **方案 B（全量精准交付）**：
+  等待全部标注完毕再行评估，交付整体延后至下周二。
+
+## 3. 向上沟通与跨部门协同
+- 需在今晚下班前向王总主动同步，避免评审会上被动质询。
+- 与李总对齐接口技术取舍，争取后端去重中间件支持。
+`;
+
+function parseMarkdownToBlocks(content: string): Block[] {
+  const blocks: Block[] = [];
+  const lines = content.split("\n");
+  let currentQuote: string[] = [];
+  let currentPara: string[] = [];
+
+  const flushPara = () => {
+    if (currentPara.length > 0) {
+      const text = currentPara.join("\n").trim();
+      if (text) {
+        blocks.push({
+          kind: "para",
+          dropcap: blocks.length === 0,
+          text,
+        });
+      }
+      currentPara = [];
+    }
+  };
+
+  const flushQuote = () => {
+    if (currentQuote.length > 0) {
+      const text = currentQuote.join("\n").trim();
+      if (text) {
+        blocks.push({
+          kind: "quote",
+          label: "建议回复话术 · SUGGESTED REPLY",
+          text,
+        });
+      }
+      currentQuote = [];
+    }
+  };
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (line.startsWith(">")) {
+      flushPara();
+      currentQuote.push(line.replace(/^>\s?/, ""));
+    } else if (!line) {
+      flushQuote();
+      flushPara();
+    } else {
+      flushQuote();
+      currentPara.push(rawLine);
+    }
+  }
+
+  flushQuote();
+  flushPara();
+
+  if (blocks.length > 0) {
+    blocks.push({ kind: "actions" });
+  }
+
+  return blocks;
+}
 
 type PanelState =
   | { type: "person"; id: string }
@@ -60,6 +136,7 @@ export function AppShell() {
   const [rehearsal, setRehearsal] = useState(false);
   const [proactive, setProactive] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [activeCanvas, setActiveCanvas] = useState<CanvasDoc | null>(null);
 
   const [conversations, setConversations] =
     useState<Conversation[]>(INITIAL_CONVERSATIONS);
@@ -74,6 +151,16 @@ export function AppShell() {
 
   const activeConv =
     conversations.find((c) => c.id === activeConvId) ?? conversations[0];
+
+  /* 检查并唤出 Canvas */
+  const openDefaultCanvas = useCallback((title = "招聘 Agent v2 PRD 核心方案.md") => {
+    setActiveCanvas({
+      id: "prd-recruiting",
+      title,
+      content: DEFAULT_PRD_CONTENT,
+      updatedAt: "刚刚",
+    });
+  }, []);
 
   /* 主动提醒：6 秒后安静浮出 */
   useEffect(() => {
@@ -123,8 +210,29 @@ export function AppShell() {
   );
 
   const send = useCallback(
-    (text: string) => {
+    async (text: string) => {
       const convId = activeConvId;
+
+      // 关键词检测：按需自动唤出 Canvas（写 PRD、撰写方案、会议纪要）
+      const lower = text.toLowerCase();
+      if (
+        !activeCanvas &&
+        (lower.includes("prd") ||
+          lower.includes("方案") ||
+          lower.includes("需求") ||
+          lower.includes("会议纪要") ||
+          lower.includes("备忘"))
+      ) {
+        openDefaultCanvas();
+      }
+
+      const userMsg: ChatMessage = {
+        id: nextId(),
+        role: "user",
+        time: "刚刚",
+        text,
+      };
+
       patchConversation(convId, (c) => ({
         ...c,
         title:
@@ -132,20 +240,79 @@ export function AppShell() {
             ? text.slice(0, 16) + (text.length > 16 ? "…" : "")
             : c.title,
         time: "刚刚",
-        messages: [
-          ...c.messages,
-          { id: nextId(), role: "user", time: "刚刚", text } as ChatMessage,
-        ],
+        messages: [...c.messages, userMsg],
       }));
+
       setTyping(true);
-      const reply = CANNED_REPLIES[cannedIdx.current % CANNED_REPLIES.length];
-      cannedIdx.current += 1;
-      setTimeout(() => {
-        setTyping(false);
+
+      const assistantMsgId = nextId();
+      let streamAccumulator = "";
+
+      try {
+        // 构建请求上下文
+        const currentConv = conversations.find((c) => c.id === convId);
+        const history = (currentConv?.messages || []).map((m) => ({
+          role: m.role,
+          content: m.role === "user" ? m.text : "已提供建议",
+        }));
+
+        const res = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            messages: [...history, { role: "user", content: text }],
+            activeCanvas: activeCanvas
+              ? { title: activeCanvas.title, content: activeCanvas.content }
+              : undefined,
+          }),
+        });
+
+        if (!res.ok || !res.body) {
+          throw new Error("Chat upstream failed");
+        }
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+
+        // 占位初始化 assistant 消息
         patchConversation(convId, (c) => ({
           ...c,
           messages: [
             ...c.messages,
+            {
+              id: assistantMsgId,
+              role: "assistant",
+              time: "刚刚",
+              blocks: [],
+            } as ChatMessage,
+          ],
+        }));
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const chunk = decoder.decode(value, { stream: true });
+          streamAccumulator += chunk;
+          const parsedBlocks = parseMarkdownToBlocks(streamAccumulator);
+
+          patchConversation(convId, (c) => ({
+            ...c,
+            messages: c.messages.map((m) =>
+              m.id === assistantMsgId ? { ...m, blocks: parsedBlocks } : m,
+            ),
+          }));
+        }
+
+        setTyping(false);
+      } catch (err) {
+        console.warn("API fallback to canned reply:", err);
+        setTyping(false);
+        const reply = CANNED_REPLIES[cannedIdx.current % CANNED_REPLIES.length];
+        cannedIdx.current += 1;
+        patchConversation(convId, (c) => ({
+          ...c,
+          messages: [
+            ...c.messages.filter((m) => m.id !== assistantMsgId),
             {
               id: nextId(),
               role: "assistant",
@@ -154,9 +321,15 @@ export function AppShell() {
             } as ChatMessage,
           ],
         }));
-      }, 1000);
+      }
     },
-    [activeConvId, patchConversation],
+    [
+      activeConvId,
+      activeCanvas,
+      conversations,
+      openDefaultCanvas,
+      patchConversation,
+    ],
   );
 
   const selectConversation = useCallback((id: string) => {
@@ -255,18 +428,39 @@ export function AppShell() {
             activeTitle={activeConv?.title}
             sidebarCollapsed={sidebarCollapsed}
             onToggleSidebar={() => setSidebarCollapsed(false)}
+            canvasOpen={Boolean(activeCanvas)}
+            onToggleCanvas={() => {
+              if (activeCanvas) setActiveCanvas(null);
+              else openDefaultCanvas();
+            }}
           />
 
-          <main ref={scrollRef} className="flex-1 overflow-y-auto">
-            {isEmptyConversation ? (
-              <EmptyState />
-            ) : (
-              <ChatFlow
-                opener={activeConv.opener}
-                messages={messages}
-                typing={typing}
-                rehearsal={rehearsal}
-                onExitRehearsal={() => setRehearsal(false)}
+          <main className="flex min-h-0 flex-1 overflow-hidden">
+            <div ref={scrollRef} className="flex-1 overflow-y-auto">
+              {isEmptyConversation ? (
+                <EmptyState />
+              ) : (
+                <ChatFlow
+                  opener={activeConv.opener}
+                  messages={messages}
+                  typing={typing}
+                  rehearsal={rehearsal}
+                  onExitRehearsal={() => setRehearsal(false)}
+                />
+              )}
+            </div>
+
+            {/* 按需唤出的 Markdown Canvas 画布 */}
+            {activeCanvas && (
+              <MdCanvas
+                doc={activeCanvas}
+                onChange={(content) =>
+                  setActiveCanvas((prev) =>
+                    prev ? { ...prev, content, updatedAt: "刚刚" } : null,
+                  )
+                }
+                onClose={() => setActiveCanvas(null)}
+                onAskAI={ask}
               />
             )}
           </main>

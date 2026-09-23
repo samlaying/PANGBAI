@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, ChevronDown, PanelLeftOpen } from "lucide-react";
+import { Bell, ChevronDown, FileText, PanelLeftOpen } from "lucide-react";
 import { ME } from "@/lib/mock-data";
 import { useUI } from "./ui-context";
 import { Notifications } from "./overlays/notifications";
@@ -11,12 +11,16 @@ export function Masthead({
   activeTitle,
   sidebarCollapsed,
   onToggleSidebar,
+  canvasOpen,
+  onToggleCanvas,
 }: {
   notifOpen: boolean;
   setNotifOpen: (v: boolean) => void;
   activeTitle?: string;
   sidebarCollapsed?: boolean;
   onToggleSidebar?: () => void;
+  canvasOpen?: boolean;
+  onToggleCanvas?: () => void;
 }) {
   const ui = useUI();
 
@@ -42,8 +46,23 @@ export function Masthead({
           )}
         </div>
 
-        {/* 右侧：通知与用户菜单 */}
-        <div className="relative flex items-center gap-1.5 shrink-0">
+        {/* 右侧：通知、Canvas 开关与用户菜单 */}
+        <div className="relative flex items-center gap-2 shrink-0">
+          {onToggleCanvas && (
+            <button
+              type="button"
+              onClick={onToggleCanvas}
+              className={`flex items-center gap-1.5 px-2.5 py-1 font-serif text-[12px] border transition-colors ${
+                canvasOpen
+                  ? "border-accent bg-paper-deep text-accent"
+                  : "border-rule bg-paper hover:bg-paper-deep text-ink-soft"
+              }`}
+              title={canvasOpen ? "收起 PRD Canvas" : "展开 PRD Canvas"}
+            >
+              <FileText className="size-3.5" strokeWidth={1.5} />
+              <span>PRD Canvas</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setNotifOpen(!notifOpen)}
