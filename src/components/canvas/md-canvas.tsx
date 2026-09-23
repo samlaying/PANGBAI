@@ -33,6 +33,13 @@ export function MdCanvas({
   const [copied, setCopied] = useState(false);
   const [fullWidth, setFullWidth] = useState(false);
   const [selectedSnippet, setSelectedSnippet] = useState<string | null>(null);
+  const [popupPos, setPopupPos] = useState<{
+    x: number;
+    y: number;
+    placeBelow: boolean;
+  } | null>(null);
+
+  const containerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const copyContent = () => {
@@ -41,22 +48,133 @@ export function MdCanvas({
     setTimeout(() => setCopied(false), 1600);
   };
 
-  /* 选中文本检测：只保留前 10 个字，剩余加省略号 */
-  const checkSelection = useCallback(() => {
-    const el = textareaRef.current;
-    if (!el) return;
-    const start = el.selectionStart;
-    const end = el.selectionEnd;
-    if (typeof start === "number" && typeof end === "number" && end > start) {
-      const raw = el.value.slice(start, end).trim();
-      if (raw.length > 0) {
-        const snippet = raw.length > 10 ? raw.slice(0, 10) + "…" : raw;
-        setSelectedSnippet(snippet);
+  /* 计算光标在 textarea 内的精确像素位置 */
+  const getCaretCoordinates = (element: HTMLTextAreaElement, position: number) => {
+    if (typeof window === "undefined") return { top: 0, left: 0 };
+    const div = document.createElement("div");
+    const style = window.getComputedStyle(element);
+
+    const props = [
+      "direction",
+      "boxSizing",
+      "width",
+      "overflowX",
+      "overflowY",
+      "borderTopWidth",
+      "borderRightWidth",
+      "borderBottomWidth",
+      "borderLeftWidth",
+      "borderStyle",
+      "paddingTop",
+      "paddingRight",
+      "paddingBottom",
+      "paddingLeft",
+      "fontStyle",
+      "fontVariant",
+      "fontWeight",
+      "fontStretch",
+      "fontSize",
+      "fontSizeAdjust",
+      "lineHeight",
+      "fontFamily",
+      "textAlign",
+      "textTransform",
+      "textIndent",
+      "textDecoration",
+      "letterSpacing",
+      "wordSpacing",
+      "tabSize",
+      "whiteSpace",
+      "wordBreak",
+      "overflowWrap",
+    ] as const;
+
+    div.style.position = "absolute";
+    div.style.visibility = "hidden";
+    div.style.whiteSpace = "pre-wrap";
+    div.style.wordBreak = "break-word";
+    div.style.top = "0px";
+    div.style.left = "-9999px";
+    div.style.width = `${element.clientWidth}px`;
+
+    for (const prop of props) {
+      (div.style as unknown as Record<string, string>)[prop] = (
+        style as unknown as Record<string, string>
+      )[prop];
+    }
+
+    div.textContent = element.value.substring(0, position);
+    const span = document.createElement("span");
+    span.textContent = element.value.substring(position, position + 1) || ".";
+    div.appendChild(span);
+
+    document.body.appendChild(div);
+    const top = span.offsetTop + parseInt(style.borderTopWidth || "0", 10);
+    const left = span.offsetLeft + parseInt(style.borderLeftWidth || "0", 10);
+    document.body.removeChild(div);
+
+    return { top, left };
+  };
+
+  /* 选中文本检测与贴近跟随定位 */
+  const updateSelection = useCallback(
+    (e?: React.MouseEvent<HTMLTextAreaElement> | React.KeyboardEvent<HTMLTextAreaElement>) => {
+      const el = textareaRef.current;
+      const container = containerRef.current;
+      if (!el || !container) return;
+
+      const start = el.selectionStart;
+      const end = el.selectionEnd;
+      if (typeof start !== "number" || typeof end !== "number" || end <= start) {
+        setSelectedSnippet(null);
+        setPopupPos(null);
         return;
       }
-    }
-    setSelectedSnippet(null);
-  }, []);
+
+      const raw = el.value.slice(start, end).trim();
+      if (!raw) {
+        setSelectedSnippet(null);
+        setPopupPos(null);
+        return;
+      }
+
+      // 只保留前 10 个字，剩余加省略号
+      const snippet = raw.length > 10 ? raw.slice(0, 10) + "…" : raw;
+      setSelectedSnippet(snippet);
+
+      const containerRect = container.getBoundingClientRect();
+
+      // 如果来自鼠标划选，直接紧贴鼠标抬起位置（物理精准）
+      if (e && "clientX" in e && e.clientX > 0 && e.clientY > 0) {
+        const rawX = e.clientX - containerRect.left + container.scrollLeft;
+        const rawY = e.clientY - containerRect.top + container.scrollTop;
+        const placeBelow = rawY < 44;
+        const clampedX = Math.max(45, Math.min(rawX, container.clientWidth - 45));
+        setPopupPos({
+          x: clampedX,
+          y: placeBelow ? rawY + 12 : rawY - 8,
+          placeBelow,
+        });
+        return;
+      }
+
+      // 键盘划选或默认情况：计算光标像素坐标
+      const caret = getCaretCoordinates(el, end);
+      const elRect = el.getBoundingClientRect();
+      const rawX =
+        elRect.left - containerRect.left + caret.left - el.scrollLeft + container.scrollLeft;
+      const rawY =
+        elRect.top - containerRect.top + caret.top - el.scrollTop + container.scrollTop;
+      const placeBelow = rawY < 44;
+      const clampedX = Math.max(45, Math.min(rawX, container.clientWidth - 45));
+      setPopupPos({
+        x: clampedX,
+        y: placeBelow ? rawY + 22 : rawY - 8,
+        placeBelow,
+      });
+    },
+    []
+  );
 
   /* 快速将选中内容加入对话框进行改变 */
   const quoteToChat = useCallback(() => {
@@ -151,18 +269,37 @@ export function MdCanvas({
       </header>
 
       {/* 实时 Markdown 编辑区 */}
-      <div className="relative flex-1 overflow-y-auto p-4 sm:p-6">
-        {/* 极简微型悬浮按钮：清淡、小巧、仅“引用” */}
-        {selectedSnippet && (
-          <div className="absolute right-6 top-4 z-20">
+      <div ref={containerRef} className="relative flex-1 overflow-y-auto p-4 sm:p-6">
+        {/* 紧贴选中文本的极简微型“引用”浮动按钮 */}
+        {selectedSnippet && popupPos && (
+          <div
+            style={{
+              position: "absolute",
+              left: `${popupPos.x}px`,
+              top: `${popupPos.y}px`,
+              transform: popupPos.placeBelow
+                ? "translate(-50%, 0)"
+                : "translate(-50%, -100%)",
+            }}
+            className="pointer-events-auto z-30 transition-all duration-75"
+          >
             <button
               type="button"
+              onMouseDown={(e) => {
+                // 阻止默认事件防止 textarea 失焦失去划选
+                e.preventDefault();
+              }}
               onClick={quoteToChat}
-              className="group flex items-center gap-1.5 border border-rule bg-paper/95 px-2 py-1 shadow-xs backdrop-blur-xs transition-all hover:border-ink/50 hover:bg-paper-warm"
+              className="group flex items-center gap-1.5 rounded-sm border border-rule bg-paper/95 px-2 py-1 shadow-md backdrop-blur-xs transition-all hover:border-ink/50 hover:bg-paper-warm"
               title={`引用「${selectedSnippet}」到对话框 (⌘L)`}
             >
-              <Quote className="size-3 text-ink-mute transition-colors group-hover:text-accent" strokeWidth={1.5} />
-              <span className="font-serif text-[11.5px] text-ink-soft group-hover:text-ink">引用</span>
+              <Quote
+                className="size-3 text-ink-mute transition-colors group-hover:text-accent"
+                strokeWidth={1.5}
+              />
+              <span className="font-serif text-[11.5px] text-ink-soft group-hover:text-ink">
+                引用
+              </span>
               <kbd className="font-mono text-[8.5px] text-ink-mute">⌘L</kbd>
             </button>
           </div>
@@ -171,11 +308,17 @@ export function MdCanvas({
         <textarea
           ref={textareaRef}
           value={doc.content}
-          onChange={(e) => onChange(e.target.value)}
-          onSelect={checkSelection}
-          onMouseUp={checkSelection}
-          onKeyUp={checkSelection}
+          onChange={(e) => {
+            onChange(e.target.value);
+            setSelectedSnippet(null);
+            setPopupPos(null);
+          }}
+          onMouseUp={updateSelection}
+          onKeyUp={updateSelection}
           onKeyDown={handleKeyDown}
+          onScroll={() => {
+            setPopupPos(null);
+          }}
           placeholder="在此编写或润色 Markdown 方案与 PRD，旁白将在对话中实时感知改动……"
           className="h-full min-h-[480px] w-full resize-none bg-transparent font-mono text-[13.5px] leading-[1.8] text-ink outline-none placeholder:text-ink-mute/50"
           spellCheck={false}
