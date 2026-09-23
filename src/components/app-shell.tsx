@@ -165,11 +165,19 @@ export function AppShell() {
   }, []);
 
   const startNewConversation = useCallback(() => {
+    // 幂等保护：如果已有空会话（尤其是最新的空会话），直接切换过去，不重复创建
+    const emptyConv = conversations.find((c) => c.messages.length === 0);
+    if (emptyConv) {
+      setActiveConvId(emptyConv.id);
+      setRehearsal(false);
+      return;
+    }
+
     const conv = newConversation();
     setConversations((cs) => [conv, ...cs]);
     setActiveConvId(conv.id);
     setRehearsal(false);
-  }, []);
+  }, [conversations]);
 
   const deleteConversation = useCallback(
     (id: string) => {
