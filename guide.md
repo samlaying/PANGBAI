@@ -1,0 +1,1580 @@
+# 🏗️ AI 职场导师 — 最终完整技术栈
+
+> **架构哲学：一个 Coach Agent + Skills + Tools + 持久化工作世界模型 + Harness**
+>
+> 不做 Multi-Agent 平台，不做架构先行，一切被真实场景逼出来再加。
+
+---
+
+## 一、系统总览
+
+```text
+┌─────────────────────────────────────────────────────────────────┐
+│                        AI 职场导师                                │
+│                                                                 │
+│   对话 ─ 项目 ─ 人物 ─ 会议 ─ 记忆 ─ 主动提醒 ─ 成长             │
+└────────────────────────────┬────────────────────────────────────┘
+                             │
+                      Next.js Web App
+                             │
+                ┌────────────┴────────────┐
+                │                         │
+          Frontend UI               Backend API
+                │                         │
+         React + Tailwind           TypeScript
+         shadcn/ui + Radix          Next.js Route Handlers
+                │                         │
+                └────────────┬────────────┘
+                             │
+                     ┌───────▼────────┐
+                     │  Agent Runtime │
+                     │ DeepSeek       │
+                     │ Harness        │
+                     └───────┬────────┘
+                             │
+              ┌──────────────┼──────────────┐
+              │              │              │
+           Skills         Tools          Memory
+              │              │              │
+           SKILL.md      TypeScript      SQLite
+           (渐进式披露)    Functions      + Drizzle
+              │              │           + FTS5
+              │              │              │
+              └──────────────┼──────────────┘
+                             │
+                   Workplace World Model
+                             │
+        ┌──────────┬─────────┼─────────┬──────────┐
+        │          │         │         │          │
+      People    Projects  Relations  Events    Evidence
+        │          │         │         │          │
+        └──────────┴─────────┼─────────┴──────────┘
+                             │
+                     Background Jobs
+                             │
+                  Scheduler / Event Loop
+                             │
+              主动提醒 ─ 复盘 ─ Memory Reflection
+```
+
+---
+
+## 二、技术栈总表
+
+| 层 | 技术 | 说明 |
+|:---|:---|:---|
+| **Web 框架** | **Next.js 15 (App Router)** | 全栈统一，前后端同仓 |
+| **语言** | **TypeScript** | 全栈统一 |
+| **UI** | **React 18** | |
+| **CSS** | **Tailwind CSS** | |
+| **组件库** | **shadcn/ui + Radix UI** | 可控、可定制 |
+| **表单** | **React Hook Form** | |
+| **校验** | **Zod** | 前后端共享 schema |
+| **数据获取** | **TanStack Query** | 前端缓存 / 请求管理 |
+| **Server** | **Next.js Route Handlers** | 不拆微服务 |
+| **Agent Runtime** | **DeepSeek Harness** | Agent loop / session / tool call / trace |
+| **Agent** | **1 个 Coach Agent** | 单 Agent + 多 Skill |
+| **Skills** | **SKILL.md** | 渐进式披露，程序性知识 |
+| **Tools** | **TypeScript Functions** | 10~15 个核心 Tool |
+| **LLM** | **ModelProvider 统一抽象** | DeepSeek / Claude / GPT / Qwen 可切换 |
+| **数据库** | **SQLite (better-sqlite3)** | 轻量、零配置、嵌入式 |
+| **ORM** | **Drizzle ORM** | 类型安全、迁移友好 |
+| **全文搜索** | **SQLite FTS5** | 人名、项目、事件检索 |
+| **Memory** | **自研 World Model** | Episodic + Semantic + Relationship |
+| **Event** | **SQLite Event Log** | 所有工作事件可追溯 |
+| **Reflection** | **TypeScript + LLM 调用** | 从 Event → Evidence → Pattern |
+| **Scheduler** | **Harness Scheduler / Cron** | 定时检查、主动提醒 |
+| **Background** | **Harness Loop / Worker** | 异步 reflection、proactive |
+| **Trace** | **Harness Trace** | 开发调试必备 |
+| **Eval** | **自建 Eval Dataset** | 50~100 个真实场景 |
+| **单测** | **Vitest** | |
+| **E2E** | **Playwright** | |
+| **部署** | **Vercel（首选）/ Docker** | |
+| **生产数据库（后期）** | **PostgreSQL** | |
+| **向量搜索（后期）** | **pgvector** | |
+| **可观测性（后期）** | **OpenTelemetry / Langfuse** | |
+
+---
+
+## 三、各层详细设计
+
+### 3.1 前端
+
+```
+src/app/
+├── layout.tsx
+├── page.tsx                    # Chat（入口）
+├── chat/
+│   └── [sessionId]/
+├── people/
+│   ├── page.tsx                # 人物列表
+│   └── [personId]/
+│       ├── page.tsx            # 人物详情
+│       ├── evidence/           # 行为证据
+│       └── timeline/           # 互动时间线
+├── projects/
+│   ├── page.tsx
+│   └── [projectId]/
+├── relationships/
+├── meetings/
+├── memories/
+├── growth/                     # 我的成长
+└── settings/
+```
+
+**核心原则：Chat 只是入口，不是全部。**
+
+前端要呈现的是一个 **持续理解你的工作环境的 AI**，所以：
+- People 页面展示 AI 建立的人物画像 + 证据链
+- Project 页面展示项目风险、参与者关系
+- Growth 页面展示 AI 对你的建议和成长轨迹
+- Memories 页面可以查看、编辑、删除 AI 记住的内容
+
+---
+
+### 3.2 后端
+
+```
+src/
+├── app/
+│   └── api/
+│       ├── chat/               # 对话入口
+│       ├── people/
+│       ├── projects/
+│       ├── relationships/
+│       ├── memories/
+│       └── events/
+│
+├── agent/
+│   ├── coach.ts                # Coach Agent 主体
+│   ├── skills/
+│   │   ├── workplace-coach/
+│   │   │   ├── SKILL.md
+│   │   │   ├── reference.md
+│   │   │   └── scripts/
+│   │   ├── people-model/
+│   │   │   └── SKILL.md
+│   │   ├── relationship-coach/
+│   │   │   └── SKILL.md
+│   │   ├── meeting-coach/
+│   │   │   └── SKILL.md
+│   │   ├── difficult-conversation/
+│   │   │   └── SKILL.md
+│   │   ├── memory-reflection/
+│   │   │   └── SKILL.md
+│   │   └── human-response/
+│   │       └── SKILL.md
+│   ├── tools/
+│   │   ├── people.ts
+│   │   ├── projects.ts
+│   │   ├── relationships.ts
+│   │   ├── events.ts
+│   │   ├── memory.ts
+│   │   └── evidence.ts
+│   └── prompts/
+│       └── system.ts
+│
+├── domain/
+│   ├── people/
+│   ├── projects/
+│   ├── relationships/
+│   ├── memories/
+│   ├── events/
+│   └── evidence/
+│
+├── db/
+│   ├── schema.ts               # Drizzle schema
+│   ├── client.ts               # SQLite connection
+│   ├── queries/
+│   └── migrations/
+│
+├── model/
+│   ├── provider.ts             # ModelProvider 统一接口
+│   ├── deepseek.ts
+│   ├── claude.ts
+│   └── openai.ts
+│
+├── reflection/
+│   ├── engine.ts               # Reflection 主流程
+│   ├── evidence-extractor.ts   # 提取证据
+│   └── pattern-detector.ts     # 发现规律
+│
+└── jobs/
+    ├── scheduler.ts
+    ├── reflection.ts           # 定期 Memory Reflection
+    ├── reminders.ts            # 会议/截止日提醒
+    └── proactive.ts            # 主动建议
+```
+
+---
+
+### 3.3 Agent Runtime — DeepSeek Harness
+
+**定位：Harness 是 Agent 的运行时，不是你的产品架构。**
+
+Harness 负责：
+| 能力 | 说明 |
+|:---|:---|
+| Agent loop | 多轮推理、自主决定调用什么 |
+| Session | 会话管理 |
+| Context | 上下文组装（Skill + Memory + History） |
+| Tool calling | 执行 Tools |
+| Skill loading | 渐进式加载 SKILL.md |
+| Execution trace | 全链路追踪 |
+| State | Agent 中间状态 |
+| Long-running tasks | 长任务支持 |
+| Replay / Debug | 回放调试 |
+
+**关键隔离原则：**
+
+```text
+你的代码永远通过自己的抽象层访问 Harness：
+
+src/agent/
+  ├── coach.ts          ← 你的业务逻辑
+  ├── skills/           ← 你的 Skill
+  ├── tools/            ← 你的 Tool
+  └── runtime.ts        ← 唯一接触 Harness API 的地方
+```
+
+以后换 Runtime（OpenAI Agents SDK / Claude Agent SDK / 自研）**不影响任何业务代码**。
+
+---
+
+### 3.4 Model Provider 抽象
+
+```typescript
+// src/model/provider.ts
+interface ModelProvider {
+  generate(messages: Message[], options?: GenerateOptions): Promise<Response>;
+  stream(messages: Message[], options?: GenerateOptions): AsyncIterator<Chunk>;
+  toolCall(messages: Message[], tools: Tool[]): Promise<ToolCall[]>;
+}
+
+// 实现
+class DeepSeekProvider implements ModelProvider { ... }
+class ClaudeProvider implements ModelProvider { ... }
+class OpenAIProvider implements ModelProvider { ... }
+```
+
+你的 Agent 只关心 `generate() / stream() / toolCall()`，**绝不写 `if model === "deepseek"`**。
+
+---
+
+### 3.5 Skills — 核心设计
+
+> **Skill 是核心，但不是全部。**
+> Skill 负责「怎么思考」，Tool 负责「能看到和改变什么」，Memory 负责「记住什么」。
+
+**每个 Skill 遵循 Anthropic Agent Skills 规范（渐进式披露）：**
+
+```yaml
+# skills/workplace-coach/SKILL.md
+---
+name: workplace-coach
+description: |
+  职场导师核心技能。识别工作场景、理解上下文、读取相关人物/
+  项目/关系、判断真正的问题、选择行动策略、生成自然语言建议。
+---
+
+## 第一层：启动时加载 name + description（已在系统提示词中）
+
+## 第二层：SKILL.md 主体（Agent 判断相关时读取）
+
+你是用户的职场教练。收到用户的工作场景描述时：
+
+1. **识别场景类型**：向上管理 / 跨部门协作 / 项目风险 / 向下管理 / 会议沟通
+2. **理解上下文**：调用 get_person、get_project、search_events 获取相关信息
+3. **判断真正的问题**：不要直接给教科书式建议，先想清楚用户真正面临的是什么
+4. **选择行动策略**：参考 relationship-coach / meeting-coach / difficult-conversation
+5. **生成自然语言**：像一个懂你的老同事在聊天，不要像 AI 在上课
+
+详细场景判断标准见 [reference.md](./reference.md)
+高难度对话话术见 [difficult-conversation.md](./difficult-conversation.md)
+```
+
+**6 个核心 Skill：**
+
+| Skill | 职责 |
+|:---|:---|
+| `workplace-coach` | 核心判断与策略 |
+| `people-model` | 从事件提取行为证据，更新人物模型 |
+| `relationship-coach` | 理解和优化人际关系 |
+| `meeting-coach` | 会议前准备、会议中建议、会议后复盘 |
+| `difficult-conversation` | 高难度对话的策略与话术 |
+| `memory-reflection` | 判断什么值得记住，如何更新 Memory |
+| `human-response` | 确保回复自然、不像 AI |
+
+---
+
+### 3.6 Tools — 10~15 个核心 Tool
+
+```
+People
+├── get_person              # 获取人物模型
+├── update_person_model     # 更新人物画像
+│
+Projects
+├── get_project
+├── update_project
+│
+Relationship
+├── get_relationship
+├── update_relationship
+│
+Events
+├── create_event
+├── search_events           # FTS5 全文搜索
+├── get_recent_events
+│
+Memory
+├── search_memory
+├── create_memory
+├── update_memory
+│
+Evidence
+├── get_evidence
+└── create_evidence
+```
+
+**关键：一个 Coach Agent 直接调用 Tools，不做 Router Agent → Sub Agent 的多层编排。**
+
+```text
+"王总刚刚问我为什么项目还没做完"
+
+        Coach Agent
+            │
+  ┌─────────┼─────────┐
+  ↓         ↓         ↓
+get_person get_project search_events
+  │         │         │
+  └─────────┼─────────┘
+            ↓
+       Coach 判断
+            ↓
+       最终回答
+```
+
+---
+
+### 3.7 数据库设计
+
+**SQLite + Drizzle ORM + FTS5**
+
+```sql
+-- users
+users(id, name, email, role, created_at, updated_at)
+
+-- people：人物基础信息
+people(id, user_id, name, role, department, organization, created_at, updated_at)
+
+-- person_model：人物画像（不是直接贴标签！）
+person_model(id, person_id, pattern, confidence, evidence_count, last_observed_at)
+
+-- projects
+projects(id, user_id, name, status, description, created_at, updated_at)
+
+-- relationships
+relationships(id, user_id, person_id, type, quality, notes, created_at, updated_at)
+
+-- events：所有工作事件
+events(id, user_id, type, content, person_id, project_id, metadata, created_at)
+
+-- evidence：行为证据（支撑 person_model）
+evidence(id, person_id, event_id, observation, source, created_at)
+
+-- memories：长期记忆
+memories(id, user_id, type, content, source_event_id, importance, created_at, updated_at)
+
+-- situations：场景
+situations(id, user_id, type, context, resolution, created_at)
+
+-- strategies：策略
+strategies(id, situation_id, approach, reasoning, created_at)
+
+-- feedback：用户反馈
+feedback(id, user_id, situation_id, rating, comment, created_at)
+```
+
+**人物画像设计原则：**
+
+```text
+❌ 不要这样：
+  person.style = "强势"
+
+✅ 要这样：
+  person_model:
+    pattern: "倾向于提前知道项目风险"
+    confidence: 0.82
+    evidence_count: 4
+    last_observed_at: "2025-01-15"
+
+  evidence:
+    - event_id: 001
+      observation: "王总在周会上追问项目延期原因"
+    - event_id: 002
+      observation: "王总要求下次提前汇报风险"
+    - event_id: 003
+      observation: "王总对临时暴露风险表示不满"
+    - event_id: 004
+      observation: "王总主动询问项目进度，不等汇报"
+```
+
+这样 AI 不会因为一次对话给一个人贴标签。
+
+---
+
+### 3.8 Memory Architecture
+
+```
+                 Memory
+                    │
+        ┌───────────┼────────────┐
+        ↓           ↓            ↓
+    Episodic     Semantic     Relationship
+    Memory       Memory        Memory
+        │           │            │
+     发生了什么    什么规律      我和他是什么关系
+```
+
+**完整记忆演化链路：**
+
+```text
+Event
+ ↓
+Evidence
+ ↓
+Memory
+ ↓
+Pattern
+ ↓
+People / Relationship Model
+ ↓
+Strategy
+ ↓
+User Outcome
+ ↓
+Feedback
+ ↓
+Memory 更新
+```
+
+这才是产品真正的「智能」。
+
+---
+
+### 3.9 Reflection Engine
+
+```text
+用户说了一句话
+       ↓
+Coach 正常回答
+       ↓
+Reflection Engine 判断是否值得记录
+       ↓
+值得？
+  ↓
+提取 Evidence
+       ↓
+是否重复出现？（evidence_count ≥ 3）
+       ↓
+更新 Pattern → 更新 person_model
+       ↓
+触发 relationship / strategy 更新
+```
+
+**不是每句话都写 Memory。而是有阈值、有证据链。**
+
+---
+
+### 3.10 Background / Proactive
+
+```text
+Scheduler（定时触发）
+   ↓
+检查工作状态
+   ↓
+发现值得提醒的事情
+   ↓
+触发 Coach Agent
+   ↓
+主动建议
+
+示例：
+明天 10:00 和王总开会
+→ 项目 X 最近有两个风险
+→ 王总对「临时暴露风险」比较敏感（pattern: 0.82）
+→ AI 主动提醒：
+
+  "明天和王总开会，我建议你提前准备一下项目 X。
+   上次类似情况你是在会上才提风险，这次最好提前同步。"
+```
+
+**这才是「AI 主动参与你的工作」，而不是「一个会记忆的 ChatGPT」。**
+
+---
+
+### 3.11 Event System
+
+**第一版不需要 Kafka / Redis / 消息队列。**
+
+```text
+events table + background worker + scheduler
+```
+
+所有事情都记录为 Event：
+
+```json
+{
+  "type": "leader_question",
+  "person_id": "xxx",
+  "project_id": "yyy",
+  "content": "为什么还没完成",
+  "metadata": { "tone": "urgent", "context": "weekly_meeting" },
+  "created_at": "2025-01-15T14:30:00Z"
+}
+```
+
+之后：
+
+```text
+Event → Reflection → Memory → Relationship → Future Strategy
+```
+
+---
+
+### 3.12 Evals
+
+**这个项目必须有 Eval，甚至比漂亮 UI 更重要。**
+
+```
+src/evals/
+├── leadership/
+├── difficult-conversation/
+├── project-management/
+├── meeting/
+├── memory/
+└── natural-response/
+```
+
+每个测试用例：
+
+```typescript
+{
+  id: "case-001",
+  category: "leadership",
+  input: "王总刚刚问我为什么还没做完。",
+  memory_context: {
+    people: [{ name: "王总", pattern: "偏好提前同步风险", confidence: 0.82 }],
+    events: [...],
+  },
+  expectations: {
+    must_not: ["教科书式回答", "直接给建议"],
+    should: ["先询问延期原因", "是否提前知道风险", "建议提前同步"],
+    tone: "像懂你的老同事",
+  },
+}
+```
+
+**量化维度：**
+
+| 维度 | 评估标准 |
+|:---|:---|
+| 场景理解 | 是否识别出真正的职场问题 |
+| 上下文调用 | 是否正确检索了相关 Memory |
+| Memory 使用 | 是否利用了历史证据 |
+| 建议合理性 | 建议是否可执行、有针对性 |
+| 自然程度 | 是否像真人聊天 |
+| 幻觉 | 是否编造不存在的事件 |
+| 过度总结 | 是否把一句话总结成一堆结论 |
+| AI 感 | 是否让人觉得「这不像 AI」 |
+
+---
+
+### 3.13 Observability
+
+**开发期直接用 Harness Trace，不做复杂 tracing 平台。**
+
+```text
+User Input
+  ↓
+Agent（Harness）
+  ↓
+Skill 加载（SKILL.md）
+  ↓
+Tool 调用（get_person / search_events）
+  ↓
+Memory 检索
+  ↓
+Model 调用
+  ↓
+Response 生成
+  ↓
+Memory 更新（Reflection）
+```
+
+后期按需接 **Langfuse / OpenTelemetry / Sentry**。
+
+---
+
+## 四、渐进式架构演进路线
+
+```text
+Phase 1（MVP）
+─────────────────────────────
+✅ Next.js 全栈
+✅ 1 个 Coach Agent
+✅ 3~5 个 Skill
+✅ 10 个 Tool
+✅ SQLite + Drizzle + FTS5
+✅ Memory（Episodic + People Model）
+✅ Event Log
+✅ 基础 Reflection
+✅ 30 个 Eval Case
+✅ Harness Trace
+
+Phase 2（增强）
+─────────────────────────────
+✅ 6~7 个 Skill 全面覆盖
+✅ Relationship Memory
+✅ Background Scheduler
+✅ Proactive 主动提醒
+✅ 100 个 Eval Case
+✅ 量化 A/B 对比
+
+Phase 3（规模化）
+─────────────────────────────
+→ PostgreSQL + pgvector
+→ 向量搜索（语义检索）
+→ OpenTelemetry / Langfuse
+→ 多用户 / 团队版
+→ 多 Agent（如果真的需要）
+→ 消息队列（如果真的需要）
+```
+
+---
+
+## 五、最终 7 个核心概念
+
+```text
+             AI 职场导师
+                  │
+          ┌───────┴───────┐
+          │               │
+       Coach           World Model
+          │               │
+      ┌───┼───┐       ┌───┼────┐
+      │   │   │       │   │    │
+    Skill Tool Memory People Project
+          │               │
+          └───────┬───────┘
+                  ↓
+              Event Log
+                  ↓
+             Reflection
+                  ↓
+           Memory Evolution
+                  ↓
+            Proactive Coach
+```
+
+| 概念 | 职责 |
+|:---|:---|
+| **Coach** | 唯一的 Agent，负责判断和行动 |
+| **Skill** | 教 Coach「怎么思考」（渐进式程序性知识） |
+| **Tool** | 教 Coach「能看到和改变什么」（10~15 个函数） |
+| **Memory** | 教 Coach「记住什么」（Episodic + Semantic + Relationship） |
+| **World Model** | Coach 对「我—领导—项目—关系—事件」的持续理解 |
+| **Event + Reflection** | 教 Coach「如何不断进化」 |
+| **Proactive Coach** | AI 主动参与你的工作 |
+
+---
+
+## 六、最重要的一句话
+
+> **你现在真正应该开发的不是「一个 Multi-Agent 系统」，而是「一个能够持续建立『我—领导—项目—关系—事件』世界模型的 Coach Agent」。**
+
+Harness 只是让 Agent 跑起来；
+Skill 负责它**怎么思考**；
+Tool 负责它**能看到和改变什么**；
+Memory 负责它**记住什么**；
+Event + Reflection 负责它**如何不断进化**。
+
+**第一版就已经可以是一个完整产品，而不是 Demo。**
+之后增加多 Agent、向量库、Postgres、消息队列，都应该是**被真实场景逼出来的**，而不是架构先行。
+
+
+
+# 前端页面示意图
+# 旁白（PANGBAI）— 重设计版线稿图
+
+> **设计哲学：对话即产品。其余一切，都是恰好在此刻浮现的上下文。**
+>
+> 参考气质：Linear × Arc × Raycast —— 轻、净、快、有呼吸感
+
+---
+
+## 核心交互原则
+
+```text
+❌ 之前：侧边栏 + 多页面 + 信息堆满
+✅ 现在：一个干净的对话流 + 需要时从侧边/底部浮出的轻卡片
+
+❌ 之前：所有东西都在主页面里
+✅ 现在：弹窗 / 侧滑面板 / 浮层，用完即收
+
+❌ 之前：像后台管理系统
+✅  ✅ 现在：像和一个聪明的朋友聊天
+```
+
+---
+
+## 页面 1 · 主界面 — 「正在和旁白对话」
+
+**这是唯一常驻的主视图。干净、留白、丝滑。**
+
+```text
+┌─────────────────────────────────────────────────────────────────────┐
+│                                                                     │
+│                        ⌘K 搜索                    🔔 2              │
+│                                          ┌──────────┐               │
+│                                          │ 我  ▾    │               │
+│                                          └──────────┘               │
+│                                                                     │
+│  ┌─┐                                                                  │
+│  │·│  旁白                                                          │
+│  └─┘  刚刚                                                         │
+│       ┌──────────────────────────────────────────────────────────┐  │
+│       │                                                          │  │
+│       │  今天王总有点不开心对吧。                                  │  │
+│       │                                                          │  │
+│       │  他问"为什么还没做完"的时候，                              │  │
+│       │  其实在意的不是进度——                                      │  │
+│       │  是他今天才知道有风险。                                    │  │
+│       │                                                          │  │
+│       │  我帮你整理了一下 😊                                       │  │
+│       │                                                          │  │
+│       │  ┌────────┐  ┌────────┐  ┌────────┐                     │  │
+│       │  │ 💡建议  │  │ 📖 案例 │  │ 🎭演练  │                     │  │
+│       │  └────────┘  └────────┘  └────────┘                     │  │
+│       │                                                          │  │
+│       │  ─────────────────────────────────────────────────────   │  │
+│       │                                                          │  │
+│       │  💬 你可以这样回复他：                                      │  │
+│       │                                                          │  │
+│       │  > "王总，这块我没提前同步是我的问题。                       │  │
+│       │  >  目前卡在数据标注，预计周四能出初版。                      │  │
+│       │  >  之后我每天同步进度。"                                   │  │
+│       │                                                          │  │
+│       │  要不要我帮你想想他接下来会追问什么？                       │  │
+│       │                                                          │  │
+│       │  ┌──────────────────────────────────────────────────┐    │  │
+│       │  │ 📄 查看王总画像          ↗ 打开侧边               │    │  │
+│       │  └──────────────────────────────────────────────────┘    │  │
+│       │                                                          │  │
+│       └──────────────────────────────────────────────────────────┘  │
+│                                                                     │
+│  ┌───────────────────────────────────────────────────────────────┐  │
+│  │                                                               │  │
+│  │   跟旁白说点什么…                                    发送 ⏎   │  │
+│  │                                                               │  │
+│  └───────────────────────────────────────────────────────────────┘  │
+│                                                                     │
+│                    ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─                          │
+│                                                                     │
+│           人物     项目     成长     ⚙️                    │
+│                    （极简底部导航 / 或 Cmd+K）                       │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**设计要点：**
+
+```text
+✦ 消息气泡极简 — 不用边框包裹一切，用留白区分
+✦ 旁白的建议卡片是"浮出水面"的感觉，不是嵌在盒子里
+✦ 快捷按钮（💡建议 / 📖案例 / 🎭演练）轻量悬浮
+✦ 底部导航极简 — 5 个入口，或干脆只有 Cmd+K
+✦ 输入框足够大，像在写日记，不是搜索框
+✦ 整体留白占比 40%+
+```
+
+---
+
+## 页面 2 · 侧滑面板 — 人物画像（从对话中唤起）
+
+**不是跳转到新页面，而是从右侧滑出。对话不消失。**
+
+```text
+┌──────────────────────────────────────────────────────────────────────────┐
+│                        ⌘K 搜索                    🔔 2   [我 ▾]         │
+│                                                                          │
+│ ┌───────────────────────────────────┐ ┌──────────────────────────────┐   │
+│ │                                   │ │              ✕              │   │
+│ │  旁白                             │ │                              │   │
+│ │  ┌─────────────────────────────┐  │ │         👤                   │   │
+│ │  │                             │  │ │                              │   │
+│ │  │  今天王总有点不开心对吧。    │  │ │        王 总                  │   │
+│ │  │  他问"为什么还没做完"的时候, │  │ │      CEO · 产品部            │   │
+│ │  │  其实在意的不是进度——       │  │ │                              │   │
+│ │  │  是他今天才知道有风险。     │  │ │  ┌──────────────────────┐    │   │
+│ │  │                             │  │ │  │直属领导 · 关系偏紧绷  │    │   │
+│ │  │  💬 你可以这样回复他：       │  │ │  └──────────────────────┘    │   │
+│ │  │  > "王总，这块我没提前..."  │  │ │                              │   │
+│ │  │                             │  │ │  ── AI 学到的 ──              │   │
+│ │  │  [📄 查看王总画像 ↗]        │  │ │                              │   │
+│ │  │                             │  │ │  ● 偏好提前同步风险           │   │
+│ │  └─────────────────────────────┘  │ │    ●●●●○  82%  4条证据       │   │
+│ │                                   │ │                              │   │
+│ │  ┌─────────────────────────────┐  │ │  ● 决策风格果断直接           │   │
+│ │  │  跟旁白说点什么…     发送 ⏎ │  │ │    ●●●●●  91%  7条证据       │   │
+│ │  └─────────────────────────────┘  │ │                              │   │
+│ │                                   │ │  ● 对数据和时间线敏感         │   │
+│ │  ●  对话  人物  项目  成长  ⚙️     │ │    ●●●●○  76%  3条证据       │   │
+│ └───────────────────────────────────┘ │                              │   │
+│                                       │  ── 最近互动 ──              │   │
+│                                       │                              │   │
+│                                       │  ● 今天   "为什么没做完"     │   │
+│                                       │  ○ 3天前   项目周报          │   │
+│                                       │  ○ 1周前   方案讨论          │   │
+│                                       │  ○ 2周前   数据确认          │   │
+│                                       │                              │   │
+│                                       │  ── 关系 ──                   │   │
+│                                       │                              │   │
+│                                       │  📊 紧张度 ▓▓▓▓▓▓░░░░  65%   │   │
+│                                       │                              │   │
+│                                       │  💡 旁白建议                   │   │
+│                                       │  "和王总沟通，先说结论再       │   │
+│                                       │   说过程。有风险主动提。"      │   │
+│                                       │                              │   │
+│                                       │  [展开证据链 →] ●  对话
+
+
+## 续 · 页面 2 — 侧滑面板 · 人物画像（完整）
+
+```text
+│                                       │  ── 关系 ──                   │   │
+│                                       │                              │   │
+│                                       │  📊 紧张度 ▓▓▓▓▓▓░░░░  65%   │   │
+│                                       │                              │   │
+│                                       │  💡 旁白建议                   │   │
+│                                       │  "和王总沟通，先说结论再       │   │
+│                                       │   说过程。有风险主动提。"      │   │
+│                                       │                              │   │
+│                                       │  ┌──────────────────────┐    │   │
+│                                       │  │ 展开证据链 (4)    ▾   │    │   │
+│                                       │  ├──────────────────────┤    │   │
+│                                       │  │ 📄 今天 14:30 群聊    │    │   │
+│                                       │  │ "为什么还没做完"      │    │   │
+│                                       │  │                      │    │   │
+│                                       │  │ 📄 7月8日  项目评审   │    │   │
+│                                       │  │ 对临时通知表示不满     │    │   │
+│                                       │  │                      │    │   │
+│                                       │  │ 📄 5月20日  1:1      │    │   │
+│                                       │  │ 下次有风险提前说      │    │   │
+│                                       │  │                      │    │   │
+│                                       │  │ 📄 3月12日  周会      │    │   │
+│                                       │  │ 追问延期原因 语气严肃  │    │   │
+│                                       │  └──────────────────────┘    │   │
+│                                       │                              │   │
+│                                       │  [💬 问旁白关于王总]          │   │
+│                                       │                              │   │
+│                                       └──────────────────────────────┘   │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+**设计要点：**
+
+```text
+✦ 侧滑面板从右侧滑入，宽度约 380px，带轻微阴影
+✦ 对话区域自动压缩 / 变暗，但不消失 — 你知道自己从哪来
+✦ 证据链默认折叠，点开后向下展开（手风琴式）
+✦ 底部始终有一个 [💬 问旁白关于王总] — 跳回对话
+✦ 置信度用圆点进度条，不用数字堆砌
+✦ 每条证据一行就能看懂，点进去才是详情
+```
+
+---
+
+## 页面 3 · 证据详情弹窗（点击某条证据时）
+
+**浮在侧滑面板之上，极轻的模态。**
+
+```text
+┌──────────────────────────────────────────────────────────────────────────┐
+│                        ⌘K 搜索                    🔔 2   [我 ▾]         │
+│                                                                          │
+│ ┌───────────────────────────────────┐ ┌──────────────────────────────┐   │
+│ │                                   │ │            侧滑面板         │   │
+│ │   对话区（变暗）                  │ │   （也变暗）                 │   │
+│ │                                   │ │                              │   │
+│ │                                   │ │                              │   │
+│ │                                   │ └──────────────────────────────┘   │
+│ │                                                                          │
+│ │                          ┌──────────────────────────────────────┐      │
+│ │                          │                              ✕       │      │
+│ │                          │                                      │      │
+│ │                          │  📄 证据详情                         │      │
+│ │                          │                                      │      │
+│ │                          │  日期：7月8日 15:20                   │      │
+│ │                          │  场景：项目评审会                     │      │
+│ │                          │  人物：王总                           │      │
+│ │                          │  项目：招聘 Agent                     │      │
+│ │                          │                                      │      │
+│ │                          │  ── 原始事件 ──                       │      │
+│ │                          │                                      │      │
+│ │                          │  "在评审会上，王总得知前端方案还没    │      │
+│ │                          │   和后端对齐。他的表情明显沉下来，    │      │
+│ │                          │   说了句'为什么这种事现在才说？'     │      │
+│ │                          │   之后整场会议语气都比较紧。"         │      │
+│ │                          │                                      │      │
+│ │                          │  ── AI 提取的观察 ──                  │      │
+│ │                          │                                      │      │
+│ │                          │  观察：王总对"临时暴露风险"的反应是   │      │
+│ │                          │  明显不满，不仅仅是生气，而是失望。   │      │
+│ │                          │                                      │      │
+│ │                          │  支撑的 Pattern：                     │      │
+│ │                          │  ▸ 偏好提前同步风险 (82%)             │      │
+│ │                          │                                      │      │
+│ │                          │  [引用这段对话到旁白]                 │      │
+│ │                          │                                      │      │
+│ │                          └──────────────────────────────────────┘      │
+│ │                                                                          │
+│ └─────────────────────────────────────────────────────────────────────────┘
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+**设计要点：**
+
+```text
+✦ 背景全部轻微变暗（blur overlay），弹窗居中
+✦ 弹窗宽度约 520px，不是全屏
+✦ 原始事件用引文样式，一眼看出"这是记录"
+✦ AI 观察和原始事件明确分开 — 让用户知道哪个是事实，哪个是 AI 推断
+✦ 底部 [引用这段对话到旁白] — 一键回到对话
+✦ ✕ 点击或 Esc 即时关闭，丝滑回到之前状态
+```
+
+---
+
+## 页面 4 · 项目面板（侧滑唤起）
+
+**从对话 / 通知 / 搜索中触发，同样右侧滑出。**
+
+```text
+│ ┌───────────────────────────────────┐ ┌──────────────────────────────┐   │
+│ │                                   │ │              ✕              │   │
+│ │   对话区                          │ │                              │   │
+│ │                                   │ │  📁 招聘 Agent v2            │   │
+│ │                                   │ │  进行中 · 截止 1月31日       │   │
+│ │                                   │ │                              │   │
+│ │                                   │ │  ████████░░░░░░░░  65%      │   │
+│ │                                   │ │                              │   │
+│ │                                   │ │  ⚠️ 2 个风险待处理            │   │
+│ │                                   │ │  ┌──────────────────────┐    │   │
+│ │                                   │ │  │ ⚠ 数据标注进度慢 3 天 │    │   │
+│ │                                   │ │  │   尚未同步给王总      │    │   │
+│ │                                   │ │  ├──────────────────────┤    │   │
+│ │                                   │ │  │ ⚠ 后端 schema 未确认  │    │   │
+│ │                                   │ │  │   尚未同步给李总      │    │   │
+│ │                                   │ │  └──────────────────────┘    │   │
+│ │                                   │ │                              │   │
+│ │                                   │ │  ── 里程碑 ──                │   │
+│ │                                   │ │                              │   │
+│ │                                   │ │  ● 需求确认      ✅ 1月5日   │   │
+│ │                                   │ │  ● 技术方案      ✅ 1月10日  │   │
+│ │                                   │ │  ● 数据标注      ⚠ 延期3天  │   │
+│ │                                   │ │  ○ 模型训练      1月25日    │   │
+│ │                                   │ │  ○ 上线交付      1月31日    │   │
+│ │                                   │ │                              │   │
+│ │                                   │ │  ── 成员 ──                   │   │
+│ │                                   │ │                              │   │
+│ │                                   │ │  [👤王总] [👤李总] [👤张哥] [👤我]│   │
+│ │                                   │ │                              │   │
+│ │                                   │ │  💡 旁白                      │   │
+│ │                                   │ │  "两个风险都没同步。          │   │
+│ │                                   │ │   建议今晚先发条消息。"       │   │
+│ │                                   │ │                              │   │
+│ │                                   │ │  [💬 问旁白]  [生成同步话术]  │   │
+│ │                                   │ │                              │   │
+│ └───────────────────────────────────┘ └──────────────────────────────┘   │
+```
+
+**设计要点：**
+
+```text
+✦ 同样的侧滑交互 — 不跳页，不打断
+✦ 风险卡片用 ⚠ 红色点缀，一眼看到
+✦ 里程碑用垂直时间线，极简圆点 + 线
+✦ 成员用头像标签，点进去打开对应人物面板
+✦ 💡 旁白建议固定在底部 — 永远有下一步
+✦ [生成同步话术] 一键跳回对话并自动输入
+```
+
+---
+
+## 页面 5 · 会议面板（侧滑唤起）
+
+```text
+│ ┌───────────────────────────────────┐ ┌──────────────────────────────┐   │
+│ │                                   │ │              ✕              │   │
+│ │   对话区                          │ │                              │   │
+│ │                                   │ │  📅 明天 10:00               │   │
+│ │                                   │ │  项目评审 · 30min            │   │
+│ │                                   │ │  腾讯会议                    │   │
+│ │                                   │ │                              │   │
+│ │                                   │ │  👥 [👤王总主持] [👤李总]     │   │
+│ │                                   │ │     [👤张哥] [👤我]          │   │
+│ │                                   │ │                              │   │
+│ │                                   │ │  ┌──────────────────────┐    │   │
+│ │                                   │ │  │                      │    │   │
+│ │                                   │ │  │  💡 旁白会前建议      │    │   │
+│ │                                   │ │  │                      │    │   │
+│ │                                   │ │  │  王总主持，           │    │   │
+│ │                                   │ │  │  项目X有2个风险没同步。│    │   │
+│ │                                   │ │  │                      │    │   │
+│ │                                   │ │  │  建议：              │    │   │
+│ │                                   │ │  │  1. 今天先发消息预告  │    │   │
+│ │                                   │ │  │  2. 准备一页风险方案  │    │   │
+│ │                                   │ │  │  3. 会上主动提        │    │   │
+│ │                                   │ │  │                      │    │   │
+│ │                                   │ │  │  [生成预告消息]       │    │   │
+│ │                                   │ │  │  [📋 打开准备清单]    │    │   │
+│ │                                   │ │  │                      │    │   │
+│ │                                   │ │  └──────────────────────┘    │   │
+│ │                                   │ │                              │   │
+│ │                                   │ │  ── 参会人背景 ──             │   │
+│ │                                   │ │                              │   │
+│ │                                   │ │  [👤王总] 偏好提前同步 (82%)  │   │
+│ │                                   │ │  [👤李总] 重视技术完整 (88%)  │   │
+│ │                                   │ │                              │   │
+│ │                                   │ │  点击头像可查看详细画像 ↗     │   │
+│ │                                   │ │                              │   │
+│ │                                   │ │  ── 相关项目 ──               │   │
+│ │                                   │ │                              │   │
+│ │                                   │ │  [📁 招聘 Agent v2] ⚠ 2风险  │   │
+│ │                                   │ │                              │   │
+│ │                                   │ │  [💬 问旁白准备这会]           │   │
+│ │                                   │ │                              │   │
+│ └───────────────────────────────────┘ └──────────────────────────────┘   │
+```
+
+---
+
+## 页面 6 · 成长（弹窗唤起）
+
+**轻量弹窗，居中浮出。不是一整个页面。**
+
+```text
+┌──────────────────────────────────────────────────────────────────────────┐
+│                        ⌘K 搜索                    🔔 2   [我 ▾]         │
+│                                                                          │
+│ ┌───────────────────────────────────┐                                    │
+│ │                                   │                                    │
+│ │   对话区（变暗）                  │   ┌──────────────────────────────┐ │
+│ │                                   │   │              ✕              │ │
+│ │                                   │   │                              │ │
+│ │                                   │   │  📈 这个月的你               │ │
+│ │                                   │   │                              │ │
+│ │                                   │   │  ┌────────────────────────┐  │ │
+│ │                                   │   │  │                        │  │ │
+│ │                                   │   │  │   向上管理              │  │ │
+│ │                                   │   │  │     ★★★★☆             │  │ │
+│ │                                   │   │  │    /        \           │  │ │
+│ │                                   │   │  │   /          \          │  │ │
+│ │                                   │   │  │ 沟通 ★★★★★ ★★★☆☆ 执行 │  │ │
+│ │                                   │   │  │   \          /          │  │ │
+│ │                                   │   │  │    \        /           │  │ │
+│ │                                   │   │  │     ★★★★☆             │  │ │
+│ │                                   │   │  │   项目管理              │  │ │
+│ │                                   │   │  │                        │  │ │
+│ │                                   │   │  │  ┈┈┈ 上月               │  │ │
+│ │                                   │   │  │  ─── 本月               │  │ │
+│ │                                   │   │  │                        │  │ │
+│ │                                   │   │  └────────────────────────┘  │ │
+│ │                                   │   │                              │ │
+│ │                                   │   │  ── 亮点 ──                   │ │
+│ │                                   │   │                              │ │
+│ │                                   │   │  🟢 首次主动向王总同步风险    │ │
+│ │                                   │   │  🟢 会议中主动提备选方案      │ │
+│ │                                   │   │  🟢 需求确认会表达清晰       │ │
+│ │                                   │   │                              │ │
+│ │                                   │   │  ── 待改进 ──                 │ │
+│ │                                   │   │                              │ │
+│ │                                   │   │  🟡 与李总的跨部门沟通不够及时 │ │
+│ │                                   │   │  🔴 紧急情况下忘了先汇报     │ │
+│ │                                   │   │                              │ │
+│ │                                   │   │  ── 下月练习 ──               │ │
+│ │                                   │   │                              │ │
+│ │                                   │   │  🎯 高难度对话·先认错再给方案 │ │
+│ │                                   │   │     [开始演练]                │ │
+│ │                                   │   │                              │ │
+│ └───────────────────────────────────┘   └──────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 页面 7 · 通知（顶部下拉，极轻）
+
+**不是页面，不是弹窗 — 是顶部的一个轻浮层。**
+
+```text
+┌──────────────────────────────────────────────────────────────────────────┐
+│                        ⌘K 搜索                    🔔 2   [我 ▾]         │
+│                                     ┌────────────────────────────────┐   │
+│                                     │  通知                  全部已读 │   │
+│                                     │                                │   │
+│                                     │  ┌──────────────────────────┐ │   │
+│                                     │  │ ⚠️ 项目X风险未同步        │ │   │
+│                                     │  │ 王总明天主持项目评审，     │ │   │
+│                                     │  │ 你有2个风险没提前说。      │ │   │
+│                                     │  │        [查看]  [问旁白]   │ │   │
+│                                     │  ├──────────────────────────┤ │   │
+│                                     │  │ 💬 李总 2小时前问了问题    │ │   │
+│                                     │  │ "客户那边怎么说"           │ │   │
+│                                     │  │        [去回复]  [问旁白]  │ │   │
+│                                     │  ├──────────────────────────┤ │   │
+│                                     │  │ 📅 明天 2 个会议            │ │   │
+│                                     │  │ 10:00 评审 · 16:00 1:1    │ │   │
+│                                     │  │        [查看]  [知道了]    │ │   │
+│                                     │  └──────────────────────────┘ │   │
+│                                     └────────────────────────────────┘   │
+│                                                                     │
+│ ┌─────────────────────────────────────────────────────────────────┐     │
+│ │                                                                 │     │
+│ │   对话区（不变暗，通知只是浮层）                                 │     │
+│ │                                                                 │     │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 页面 8 · 快速搜索（⌘K）
+
+**全局入口，万物可搜，搜到即打开对应面板。**
+
+```text
+┌──────────────────────────────────────────────────────────────────────────┐
+│                                                                          │
+│                     ┌──────────────────────────────────────┐            │
+│                     │ 🔍 王总 相关                   Esc ✕  │            │
+│                     ├──────────────────────────────────────┤            │
+│                     │                                      │            │
+│                     │  👤 人物                              │            │
+│                     │  ┌────────────────────────────────┐  │            │
+│                     │  │ 👤 王总 · CEO · 产品部           │  │            │
+│                     │  │    偏好提前同步风险 (82%)       │  │            │
+│                     │  └────────────────────────────────┘  │            │
+│                     │                                      │            │
+│                     │  📁 项目                              │            │
+│                     │  ┌────────────────────────────────┐  │            │
+│                     │  │ 📁 招聘 Agent v2 · 王总发起     │  │            │
+│                     │  │    2 个风险 · 进度 65%          │  │            │
+│                     │  └────────────────────────────────┘  │            │
+│                     │                                      │            │
+│                     │  📅 会议                              │            │
+│                     │  ┌────────────────────────────────┐  │            │
+│                     │  │ 📅 明天 10:00 项目评审 · 王总主持 │  │            │
+│                     │  └────────────────────────────────┘  │            │
+│                     │  ┌────────────────────────────────┐  │            │
+│                     │  │ 📅 1月10日 方案讨论 · 有王总     │  │            │
+│                     │  └────────────────────────────────┘  │            │
+│                     │                                      │            │
+│                     │  🧠 记忆                              │            │
+│                     │  ┌────────────────────────────────┐  │            │
+│                     │  │ "王总偏好提前同步风险"          │  │            │
+│                     │  │ 置信度 82% · 4条证据            │  │            │
+│                     │  └────────────────────────────────┘  │            │
+│                     │                                      │            │
+│                     │  💬 问旁白                            │            │
+│                     │  ┌────────────────────────────────┐  │            │
+│                     │  │ 💬 "王总最近怎么样？"            │  │            │
+│                     │  │ 💬 "和王总的关系怎么修复？"       │  │            │
+│                     │  └────────────────────────────────┘  │            │
+│                     │                                      │            │
+│                     │  ↑↓ 选择  ↵ 打开  ⌘↵ 问旁白          │            │
+│                     │                                      │            │
+│                     └──────────────────────────────────────┘            │
+│                                                                          │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+**设计要点：**
+
+```text
+✦ 全局搜索可以搜人物、项目、会议、记忆、对话
+✦ 选中任意结果 → 打开对应侧滑面板（不跳页）
+✦ ⌘↵ → 不打开面板，直接在对话里"问旁白关于XXX"
+✦ 这是真正的万物入口 — 用户永远只需要 ⌘K + 回车
+✦ 搜索结果分组，每组最多 3 条，避免信息过载
+```
+
+---
+
+## 页面 9 · 设置（侧滑面板，复用同一模式）
+
+```text
+│ ┌───────────────────────────────────┐ ┌──────────────────────────────┐   │
+│ │                                   │ │              ✕              │   │
+│ │   对话区                          │ │                              │   │
+│ │                                   │ │  ⚙️ 设置                     │   │
+│ │                                   │ │                              │   │
+│ │                                   │ │  ── 我 ──                    │   │
+│ │                                   │ │  张明 · 前端开发 · 产品部     │   │
+│ │                                   │ │  [编辑资料]                   │   │
+│ │                                   │ │                              │   │
+│ │                                   │ │  ── 记忆 ──                   │   │
+│ │                                   │ │  自动记录事件        ✅       │   │
+│ │                                   │ │  Reflection 自动     ✅       │   │
+│ │                                   │ │  重要度阈值          ★★★☆☆   │   │
+│ │                                   │ │  记忆保留            6个月    │   │
+│ │                                   │ │                              │   │
+│ │                                   │ │  ── 通知 ──                   │   │
+│ │                                   │ │  会议提醒            ✅       │   │
+│ │                                   │ │  风险预警            ✅       │   │
+│ │                                   │ │  待办提醒            ✅       │   │
+│ │                                   │ │  关系提醒            ✅       │   │
+│ │                                   │ │  静默时间        21:00-9:00  │   │
+│ │                                   │ │                              │   │
+│ │                                   │ │  ── 模型 ──                   │   │
+│ │                                   │ │  当前 [DeepSeek ▾]            │   │
+│ │                                   │ │                              │   │
+│ │                                   │ │  ── 数据 ──                   │   │
+│ │                                   │ │  [导出记忆]  [导出事件]       │   │
+│ │                                   │ │                              │   │
+│ │                                   │ │  ── 危险 ──                   │   │
+│ │                                   │ │  [清空全部记忆]               │   │
+│ │                                   │ │                              │   │
+│ └───────────────────────────────────┘ └──────────────────────────────┘   │
+```
+
+---
+
+## 页面 10 · 对话中的引用展开（行内展开，不是弹窗）
+
+**对话里提到某个细节时，点击行内引用，直接在对话里展开，不跳走。**
+
+```text
+│ ┌──────────────────────────────────────────────────────────────────┐  │
+│ │                                                                  │  │
+│ │  旁白                                                            │  │
+│ │                                                                  │  │
+│ │  今天王总有点不开心对吧。                                        │  │
+│ │                                                                  │  │
+│ │  他问"为什么还没做完"的时候，                                    │  │
+│ │  其实在意的不是进度——                                            │  │
+│ │  是他今天才知道有风险。                                          │  │
+│ │                                                                  │  │
+│ │  ┌──────────────────────────────────────────────────────────┐    │  │
+│ │  │  📄 王总 · 偏好提前同步风险                                │    │  │
+│ │  │     置信度 82% · 4条证据                            ▾ 展开 │    │  │
+│ │  └──────────────────────────────────────────────────────────┘    │  │
+│ │  ═══════════════════════════════════════════════════════════     │  │
+│ │  │  📄 今天 14:30 群聊                                         │    │  │
+│ │  │  "王总问为什么还没做完"                                     │    │  │
+│ │  │                                                              │    │  │
+│ │  │  📄 7月8日 项目评审                                          │    │  │
+│ │  │  对临时通知表示不满                                          │    │  │
+│ │  │                                                              │    │  │
+│ │  │  📄 5月20日 1:1                                              │    │  │
+│ │  │  下次有风险提前说                                            │    │  │
+│ │  │                                                              │    │  │
+│ │  │  📄 3月12日 周会                                             │    │  │
+│ │  │  追问延期原因                                                │    │  │
+│ │  │                                                    ▴ 收起     │    │  │
+│ │  ═══════════════════════════════════════════════════════════     │  │
+│ │                                                                  │  │
+│ │  我建议你现在这样做：                                            │  │
+│ │                                                                  │  │
+│ │  💬 你可以这样回复他：                                            │  │
+│ │                                                                  │  │
+│ │  > "王总，这块我没提前同步是我的问题。                           │  │
+│ │  >  目前卡在数据标注，预计周四能出初版。                         │  │
+│ │  >  之后我每天同步进度。"                                        │  │
+│ │                                                                  │  │
+│ │  [💡 建议] [📖 类似案例] [🎭 来演练一下]                          │  │
+│ │                                                                  │  │
+│ └──────────────────────────────────────────────────────────────────┘  │
+```
+
+**设计要点：**
+
+```text
+✦ 引用块在对话流内部展开，像折叠卡片
+✦ 展开时对话不跳走 — 你还在同一个位置
+✦ 收起时一行收回去，干净利落
+✦ 每条证据一行摘要，点进去才看详情（弹窗）
+✦ 这样用户 90% 的时间只看对话流，需要深看时才展开
+```
+
+---
+
+## 页面 11 · 对话中的场景演练（行内展开）
+
+**旁白建议演练时，直接在对话里生成一个角色扮演练习。**
+
+```text
+│ ┌──────────────────────────────────────────────────────────────────┐  │
+│ │                                                                  │  │
+│ │  🎭 演练模式                                    [退出演练 ✕]     │  │
+│ │  ═══════════════════════════════════════════════════════════     │  │
+│ │                                                                  │  │
+│ │  场景：向王总汇报项目延期                                        │  │
+│ │                                                                  │  │
+│ │  ┌──────────────────────────────────────────────────────────┐    │  │
+│ │  │                                                          │    │  │
+│ │  │  🎭 王总（扮演）                                           │    │  │
+│ │  │                                                          │    │  │
+│ │  │  "这个项目怎么回事？怎么还没做完？                        │    │  │
+│ │  │   周五就要给客户看了。"                                   │    │  │
+│ │  │                                                          │    │  │
+│ │  └──────────────────────────────────────────────────────────┘    │  │
+│ │                                                                  │  │
+│ │  ┌──────────────────────────────────────────────────────────┐    │  │
+│ │  │  你的回复…                                      发送 ⏎   │    │  │
+│ │  └──────────────────────────────────────────────────────────┘    │  │
+│ │                                                                  │  │
+│ │  💡 提示：先承认没同步的问题，再给时间线                         │  │
+│ │                                                                  │  │
+│ └──────────────────────────────────────────────────────────────────┘  │
+```
+
+**设计要点：**
+
+```text
+✦ 演练是对话的"行内模式"，不是弹窗，不是新页面
+✦ 顶部有明确的 [退出演练] — 你不会迷路
+✦ 旁白扮演对方角色，根据你的历史数据生成逼真反应
+✦ 💡 提示在底部，不抢主角
+✦ 演练完可以一键生成总结，写入 Growth
+```
+
+---
+
+## 页面 12 · 主动提醒（悬浮卡片）
+
+**不弹窗，不打断 — 在角落浮出一张小卡片，像 Raycast 风格。**
+
+```text
+┌──────────────────────────────────────────────────────────────────────────┐
+│                        ⌘K 搜索                    🔔 2   [我 ▾]         │
+│                                                                          │
+│                                                                          │
+│ ┌─────────────────────────────────────────────────────────────────┐     │
+│ │                                                                 │     │
+│ │                                                                 │     │
+│ │   对话区（完全不受影响）                                        │     │
+│ │                                                                 │     │
+│ │                                                                 │     │
+│ │                                                                 │     │
+│ │                                                                 │     │
+│ └─────────────────────────────────────────────────────────────────┘     │
+│                                                                          │
+│                                      ┌─────────────────────────────┐    │
+│                                      │ 🌤️ 旁白 · 刚刚              ✕ │    │
+│                                      │                             │    │
+│                                      │ 明天 10:00 和王总开项目评审。  │    │
+│                                      │ 项目X有 2 个风险还没同步。     │    │
+│                                      │                             │    │
+│                                      │ 考虑到他偏好提前同步…          │    │
+│                                      │                             │    │
+│                                      │ [💬 问旁白]  [稍后再说]      │    │
+│                                      └─────────────────────────────┘    │
+│                                                                          │
+│  ┌─────────────────────────────────────────────────────────────────┐    │
+│  │  跟旁白说点什么…                                       发送 ⏎   │    │
+│  └─────────────────────────────────────────────────────────────────┘    │
+│                                                                          │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+**设计要点：**
+
+```text
+✦ 右下角浮出，不遮挡对话，不弹窗
+✦ 像 macOS 通知，安静地出现
+✦ [💬 问旁白] 点击后卡片消失，对话框自动输入相关问题
+✦ [稍后再说] 点击后淡出，存入通知中心
+✦ 不会连续弹出多张 — 一条一条来
+✦ 3 秒后自动变淡，但不会消失
+```
+
+---
+
+## 13. 全局交互系统总结
+
+### 三种内容层
+
+```text
+┌─────────────────────────────────────────────────────────┐
+│                                                         │
+│  Layer 3 · 弹窗 (Modal)                                │
+│  ┌─────────────────────────────────────────────────┐   │
+│  │  证据详情、成长报告                               │   │
+│  │  用完即关，Esc 可退                               │   │
+│  └─────────────────────────────────────────────────┘   │
+│                                                         │
+│  Layer 2 · 侧滑面板 (Slide Panel)                      │
+│  ┌─────────────────────────────────────────────────┐   │
+│  │  人物画像、项目详情、会议详情、设置               │   │
+│  │  对话不消失，面板可叠加（人物 → 证据 → 项目）     │   │
+│  └─────────────────────────────────────────────────┘   │
+│                                                         │
+│  Layer 1 · 对话流 (Chat Flow) ← 唯一常驻              │
+│  ┌─────────────────────────────────────────────────┐   │
+│  │  所有对话、行内展开的证据、演练                   │   │
+│  │  永远在这里，永远是主角                            │   │
+│  └─────────────────────────────────────────────────┘   │
+│                                                         │
+│  Layer 0 · 浮层 (Float)                                │
+│  ┌─────────────────────────────────────────────────┐   │
+│  │  通知卡片、主动提醒、⌘K 搜索                      │   │
+│  │  轻到极致，用完即散                               │   │
+│  └─────────────────────────────────────────────────┘   │
+│                                                         │
+└─────────────────────────────────────────────────────────┘
+```
+
+### 内容进入方式
+
+```text
+┌────────────────┬──────────────┬──────────────────────────────┐
+│ 内容           │ 进入方式      │ 为什么                       │
+├────────────────┼──────────────┼──────────────────────────────┤
+│ 人物画像       │ 侧滑面板      │ 需要对照对话看               │
+│ 项目详情       │ 侧滑面板      │ 需要对照对话看               │
+│ 会议准备       │ 侧滑面板      │ 需要对照对话看               │
+│ 设置           │ 侧滑面板      │ 偶尔用，不影响对话           │
+│ 证据详情       │ 弹窗          │ 看完就走                     │
+│ 成长报告       │ 弹窗          │ 每月看一次                   │
+│ 通知           │ 顶部下拉      │ 扫一眼就走                   │
+│ 主动提醒       │ 悬浮卡片      │ 不打断                       │
+│ 全局搜索       │ ⌘K 浮层       │ 万物入口                     │
+│ 对话内引用展开  │ 行内展开      │ 不离开对话                   │
+│ 场景演练       │ 行内模式      │ 沉浸在对话里                 │
+└────────────────┴──────────────┴──────────────────────────────┘
+```
+
+### 导航系统
+
+```text
+❌ 不要：侧边栏 8 个菜单 + 顶部搜索 + 页面跳转
+
+✅ 要：
+  · 对话就是主页
+  · ⌘K 是万物入口
+  · 对话里的实体（人名、项目名）可点击 → 侧滑面板
+  · 底部 4 个轻导航（对话 · 人物 · 项目 · 成长）
+  · 其余全部通过对话 / 搜索 / 通知到达
+```
+
+---
+
+## 14. 视觉气质参考
+
+```text
+┌──────────────────────────────────────────────────────────────┐
+│                                                              │
+│  色彩                                                        │
+│  ────                                                       │
+│  背景：#FAFAF8（温暖白）                                      │
+│  文字：#1A1A1A（近黑）                                       │
+│  辅助：#8B8B8B（灰）                                         │
+│  强调：#2D6A4F（沉静绿 — 不是蓝色）                          │
+│  警告：#E76F51（温和橙红）                                   │
+│  气泡：#F0EFEB（对话框底色）                                  │
+│                                                              │
+│  字体                                                        │
+│  ────                                                       │
+│  中文：思源黑体 / 苹方                                        │
+│  英文：Inter / SF Pro                                        │
+│  强调：等宽 —— 用于证据、引用                                │
+│                                                              │
+│  圆角                                                        │
+│  ────                                                       │
+│  卡片：12px                                                  │
+│  气泡：16px（对话感觉柔和）                                   │
+│  按钮：8px                                                   │
+│  弹窗：16px                                                  │
+│                                                              │
+│  动效                                                        │
+│  ────                                                       │
+│  侧滑面板：ease-out 200ms 从右侧滑入                          │
+│  弹窗：scale 0.95 → 1.0 + fade 150ms                         │
+│  浮层通知：fade + slide-up 200ms                             │
+│  行内展开：height auto + fade 150ms                          │
+│  全部用 spring physics（自然弹性）                             │
+│                                                              │
+│  阴影                                                        │
+│  ────                                                       │
+│  侧滑面板：-4px 0 24px rgba(0,0,0,0.06)                     │
+│  弹窗：0 8px 32px rgba(0,0,0,0.08)                           │
+│  浮层卡片：0 4px 16px rgba(0,0,0,0.06)                       │
+│  极轻 — 不是 Material Design 的重阴影                         │
+│                                                              │
+│  留白                                                        │
+│  ────                                                       │
+│  对话内容最大宽度 640px                                       │
+│  页面内边距 32px                                              │
+│  段落间距 16px                                                │
+│  卡片间距 12px                                                │
+│  整体留白率 35-45%                                            │
+│                                                              │
+└──────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 15. 一图看全局
+
+```text
+                        ┌──────────┐
+                        │  ⌘K 搜索  │  ← 万物入口
+                        └────┬─────┘
+                             │
+              ┌──────────────┼──────────────┐
+              ↓              ↓              ↓
+        打开侧滑面板     跳回对话提问    直接预览
+              │              │              │
+              ↓              ↓              │
+┌──────────────────────────────────────────────────────────┐
+│                                                          │
+│    Layer 1 · 对话流（永远在）                            │
+│    ┌──────────────────────────────────────────────────┐  │
+│    │                                                  │  │
+│    │  旁白 ──────────────────────────────────────     │  │
+│    │  "今天王总有点不开心对吧。                       │  │
+│    │   其实在意的不是进度，是他今天才知道有风险。     │  │
+│    │   [📄王总画像] [💡建议] [🎭演练]                 │  │
+│    │   ─────────────────────────────────────         │  │
+│    │   💬 你可以这样回复他： > "王总，这块我没..."    │  │
+│    │  ──────────────────────────────────────         │  │
+│    │                                                  │  │
+│    │  ┌──────────────────────────────────────────┐   │  │
+│    │  │  跟旁白说点什么…                  发送 ⏎  │   │  │
+│    │  └──────────────────────────────────────────┘   │  │
+│    └──────────────────────────────────────────────────┘  │
+│                                                          │
+│    Layer 2 · 侧滑面板 ─────────────────────────────►     │
+│    ┌────────────────────┐                                │
+│    │ 人物 / 项目 / 会议  │                                │
+│    │ / 设置              │  ← 需要时滑出，用完即收         │
+│    └────────────────────┘                                │
+│                                                          │
+│    Layer 3 · 弹窗 ─────────────────────────────────►     │
+│              ┌──────────────┐                            │
+│              │ 证据 / 成长   │  ← 看完就走               │
+│              └──────────────┘                            │
+│                                                          │
+│    Layer 0 · 浮层                                        │
+│         🔔 主动提醒卡片      ⌘K 搜索框                   │
+│                                                          │
+└──────────────────────────────────────────────────────────┘
+```
+
+---
+
+> **一句话总结这版设计：**
+>
+> **对话是唯一的家。其余一切——人物、项目、证据、成长——都是恰好在此刻浮现的上下文，来去自如，用完即散。**

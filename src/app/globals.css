@@ -1,0 +1,192 @@
+@import "tailwindcss";
+
+@theme {
+  /* ── 纸与墨 ─────────────────────────────── */
+  --color-paper: #faf8f2; /* 版面纸 */
+  --color-paper-warm: #fdfcf8; /* 卡片纸 */
+  --color-paper-deep: #f1ede1; /* 深一度纸（来信、选中态） */
+  --color-ink: #1c1917;
+  --color-ink-soft: #57534a;
+  --color-ink-mute: #8e887a;
+  --color-rule: #e0dac8; /* 细线 */
+  --color-accent: #2d6a4f; /* 沉静绿 */
+  --color-accent-deep: #234f3b;
+  --color-vermilion: #bc4327; /* 朱砂（警示、印章） */
+  --color-gold: #a8843c;
+
+  --font-sans: var(--font-inter), "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", system-ui, sans-serif;
+  --font-serif: var(--font-serif-sc), "Songti SC", "Noto Serif CJK SC", serif;
+  --font-display: var(--font-playfair), var(--font-serif-sc), Georgia, serif;
+  --font-mono: var(--font-mono-plex), ui-monospace, "SF Mono", monospace;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--color-accent) 24%, transparent);
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--color-rule);
+  border: 3px solid var(--color-paper);
+  border-radius: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ── 编辑风原子 ───────────────────────────── */
+
+/* 眉题：小型大写、疏排 */
+.kicker {
+  font-family: var(--font-sans);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  color: var(--color-ink-mute);
+}
+
+/* 首字下沉 */
+.dropcap::first-letter {
+  font-family: var(--font-display);
+  font-weight: 600;
+  float: left;
+  font-size: 3.3em;
+  line-height: 0.78;
+  padding: 0.06em 0.14em 0 0;
+}
+
+/* 折叠展开（grid-template-rows 过渡） */
+.collapsible {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.24s cubic-bezier(0.22, 0.8, 0.36, 1);
+}
+.collapsible.open {
+  grid-template-rows: 1fr;
+}
+.collapsible > div {
+  overflow: hidden;
+}
+
+/* 期刊双细线（刊头之下、专栏之间） */
+.rule-double {
+  border-top: 1px solid color-mix(in srgb, var(--color-ink) 72%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-ink) 72%, transparent);
+  height: 4px;
+}
+
+/* 印章式标签 */
+.stamp {
+  display: inline-block;
+  border: 1px solid color-mix(in srgb, var(--color-vermilion) 65%, transparent);
+  color: var(--color-vermilion);
+  padding: 2px 8px;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  transform: rotate(-1.2deg);
+  border-radius: 2px;
+}
+
+kbd {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-ink-soft);
+  border: 1px solid var(--color-rule);
+  background: var(--color-paper-warm);
+  border-radius: 3px;
+  padding: 1px 5px;
+  line-height: 1.5;
+}
+
+/* ── 动效 ────────────────────────────────── */
+@keyframes pb-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes pb-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes pb-panel-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: none;
+  }
+}
+@keyframes pb-modal-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes pb-blink {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.anim-fade {
+  animation: pb-fade 0.18s ease-out;
+}
+.anim-fade-up {
+  animation: pb-fade-up 0.22s ease-out;
+}
+.anim-panel {
+  animation: pb-panel-in 0.26s cubic-bezier(0.22, 0.8, 0.36, 1);
+}
+.anim-modal {
+  animation: pb-modal-in 0.18s ease-out;
+}
+.anim-blink {
+  animation: pb-blink 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .anim-fade,
+  .anim-fade-up,
+  .anim-panel,
+  .anim-modal,
+  .anim-blink {
+    animation: none;
+  }
+  .collapsible {
+    transition: none;
+  }
+}
