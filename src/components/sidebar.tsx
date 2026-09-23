@@ -44,12 +44,13 @@ export function Sidebar({
         <button
           type="button"
           onClick={onToggle}
-          aria-label="展开目录栏"
-          title="展开目录栏"
-          className="grid size-9 place-items-center text-ink-mute transition-colors hover:bg-paper-deep hover:text-ink"
+          aria-label="展开侧边栏"
+          title="展开侧边栏"
+          className="grid size-9 place-items-center font-serif text-[16px] font-black text-ink transition-colors hover:bg-paper-deep"
         >
-          <PanelLeftOpen className="size-4" strokeWidth={1.5} />
+          旁<span className="text-vermilion">。</span>
         </button>
+        <div className="my-0.5 h-px w-6 bg-rule" />
         <button
           type="button"
           onClick={onNew}
@@ -83,13 +84,21 @@ export function Sidebar({
 
   return (
     <aside className="flex w-[264px] shrink-0 flex-col border-r border-rule">
-      {/* 顶部：目录 + 折叠 */}
-      <div className="flex items-center justify-between px-4 pb-2.5 pt-3">
-        <span className="kicker">目录 · CONTENTS</span>
+      {/* 顶部：品牌 Logo + 折叠 */}
+      <div className="flex h-12 items-center justify-between border-b border-rule px-4">
+        <div className="flex items-baseline gap-2">
+          <span className="font-serif text-[18px] font-black leading-none tracking-[0.06em]">
+            旁白
+            <span className="text-vermilion">。</span>
+          </span>
+          <span className="font-display text-[9.5px] font-medium uppercase tracking-[0.2em] text-ink-mute">
+            AI 职场导师
+          </span>
+        </div>
         <button
           type="button"
           onClick={onToggle}
-          aria-label="收起目录栏"
+          aria-label="收起侧边栏"
           className="grid size-7 place-items-center text-ink-mute transition-colors hover:bg-paper-deep hover:text-ink"
         >
           <PanelLeftClose className="size-4" strokeWidth={1.5} />
@@ -97,7 +106,7 @@ export function Sidebar({
       </div>
 
       {/* 新对话与快速搜索 */}
-      <div className="space-y-2 px-4">
+      <div className="space-y-2 px-4 pt-3">
         <button
           type="button"
           onClick={onNew}

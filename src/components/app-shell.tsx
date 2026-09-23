@@ -222,50 +222,51 @@ export function AppShell() {
 
   return (
     <UIContext.Provider value={ui}>
-      <div className="flex h-dvh flex-col">
-        <Masthead
-          notifOpen={notifOpen}
-          setNotifOpen={setNotifOpen}
+      <div className="flex h-dvh w-full overflow-hidden bg-paper">
+        <Sidebar
+          conversations={conversations}
+          activeId={activeConv.id}
+          projects={projects}
+          collapsed={sidebarCollapsed}
+          onSelect={selectConversation}
+          onNew={startNewConversation}
+          onDelete={deleteConversation}
+          onOpenProject={(id) => setPanel({ type: "project", id })}
+          onNewProject={createProject}
+          onToggle={() => setSidebarCollapsed((v) => !v)}
+          onSearch={() => {
+            setNotifOpen(false);
+            setCommandOpen(true);
+          }}
         />
 
-        <div className="flex min-h-0 flex-1">
-          <Sidebar
-            conversations={conversations}
-            activeId={activeConv.id}
-            projects={projects}
-            collapsed={sidebarCollapsed}
-            onSelect={selectConversation}
-            onNew={startNewConversation}
-            onDelete={deleteConversation}
-            onOpenProject={(id) => setPanel({ type: "project", id })}
-            onNewProject={createProject}
-            onToggle={() => setSidebarCollapsed((v) => !v)}
-            onSearch={() => {
-              setNotifOpen(false);
-              setCommandOpen(true);
-            }}
+        <div className="flex min-w-0 flex-1 flex-col">
+          <Masthead
+            notifOpen={notifOpen}
+            setNotifOpen={setNotifOpen}
+            activeTitle={activeConv?.title}
+            sidebarCollapsed={sidebarCollapsed}
+            onToggleSidebar={() => setSidebarCollapsed(false)}
           />
 
-          <div className="flex min-w-0 flex-1 flex-col">
-            <main ref={scrollRef} className="flex-1 overflow-y-auto">
-              {isEmptyConversation ? (
-                <EmptyState />
-              ) : (
-                <ChatFlow
-                  opener={activeConv.opener}
-                  messages={messages}
-                  typing={typing}
-                  rehearsal={rehearsal}
-                  onExitRehearsal={() => setRehearsal(false)}
-                />
-              )}
-            </main>
+          <main ref={scrollRef} className="flex-1 overflow-y-auto">
+            {isEmptyConversation ? (
+              <EmptyState />
+            ) : (
+              <ChatFlow
+                opener={activeConv.opener}
+                messages={messages}
+                typing={typing}
+                rehearsal={rehearsal}
+                onExitRehearsal={() => setRehearsal(false)}
+              />
+            )}
+          </main>
 
-            <footer className="shrink-0 space-y-2.5 border-t border-rule bg-paper pb-1 pt-4">
-              <Composer prefill={prefill} onSend={send} />
-              <BottomNav active={navActive} />
-            </footer>
-          </div>
+          <footer className="shrink-0 space-y-2.5 border-t border-rule bg-paper pb-1 pt-4">
+            <Composer prefill={prefill} onSend={send} />
+            <BottomNav active={navActive} />
+          </footer>
         </div>
       </div>
 
