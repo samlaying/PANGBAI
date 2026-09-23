@@ -150,14 +150,11 @@ export function AppShell() {
               id: nextId(),
               role: "assistant",
               time: "刚刚",
-              blocks: reply.paras.map((text) => ({
-                kind: "para" as const,
-                text,
-              })),
+              blocks: reply.blocks,
             } as ChatMessage,
           ],
         }));
-      }, 1200);
+      }, 1000);
     },
     [activeConvId, patchConversation],
   );
