@@ -297,6 +297,36 @@ class OpenAIProvider implements ModelProvider { ... }
 
 ---
 
+### 3.4.2 模型服务接入与 Canvas 上下文感知协议
+
+系统采用行业标准的 OpenAI 兼容协议接入主流模型服务（默认接入 SiliconFlow 云端托管的 DeepSeek 系列大模型）：
+
+```typescript
+// .env.local 规范
+SILICONFLOW_API_KEY="sk-..."
+SILICONFLOW_BASE_URL="https://api.siliconflow.cn/v1"
+DEFAULT_MODEL="deepseek-ai/DeepSeek-V3" // 或 Pro/deepseek-ai/DeepSeek-R1 / DeepSeek-V4-Flash
+
+// 请求 payload 包含项目与 Canvas 实时状态
+interface ChatRequestBody {
+  conversationId: string;
+  message: string;
+  projectId?: string; // 挂载的项目上下文
+  activeCanvas?: {
+    filename: string;
+    content: string; // 用户当前正在编辑的 PRD/方案/会议纪要 Markdown 内容
+  };
+}
+```
+
+**双向感知链路：**
+1. 用户在 Canvas 中修改 Markdown；
+2. 发送对话时，前端自动携带 `activeCanvas.content`；
+3. 后端 Agent 将当前文档内容作为局部上下文（Working Document Context）注入 System Prompt；
+4. Agent 据此给出针对性的章节润色、冲突预警及修改建议。
+
+---
+
 ### 3.5 Skills — 核心设计
 
 > **Skill 是核心，但不是全部。**
@@ -1408,6 +1438,42 @@ Event + Reflection 负责它**如何不断进化**。
 ✦ [稍后再说] 点击后淡出，存入通知中心
 ✦ 不会连续弹出多张 — 一条一条来
 ✦ 3 秒后自动变淡，但不会消失
+```
+
+---
+
+## 页面 16 · 按需 Canvas 画布与 Markdown 双向感知
+
+> **哲学：平时不喧宾夺主，只有写 PRD、撰写项目方案、整理长篇会议纪要等必要场景时才唤出双栏 Canvas。**
+
+```text
+┌──────────────────────┬──────────────────────────────┬────────────────────────────────┐
+│  旁白。 AI 职场导师  │   与王总对齐招聘 Agent v2   │ 📄 PRD: 招聘 Agent v2 核心方案 ✕│
+├──────────────────────┼──────────────────────────────┼────────────────────────────────┤
+│  [ ＋ 新对话 ]       │                              │ 1. 背景与目标                  │
+│  [ 🔍 检索记录 ⌘K ]  │ 旁白：                       │ 目前核心卡点在数据标注，预计…  │
+│                      │ 这版 PRD 的排期部分，我建议  │                                │
+│  今天                │ 先把降级方案（Plan B）写在最 │ 2. 方案与取舍（Trade-off）     │
+│  · 招聘 Agent v2 PRD │ 前面，给王总清晰的心理预期。 │ - 方案 A（全量上线）：需延期3天│
+│                      │ 这样在明天的评审会上能最大   │ - 方案 B（核心先行）：保期上线 │
+│  本周                │ 程度减少冲突。               │                                │
+│  · 方案评审复盘      │                              │ 3. 跨部门协同点                │
+│                      │ ──────────────────────────── │ 与李总后端联调时间表…          │
+│  项目 · PROJECTS     │ [✨采纳建议] [📝继续帮我完善]│                                │
+│  📁 招聘 Agent v2    │                              │                                │
+│                      │ ┌──────────────────────────┐ │                                │
+│                      │ │ 跟旁白说…       发送 ⏎   │ │ 纯文本 Markdown 实时双向编辑   │
+│                      │ └──────────────────────────┘ │ [保存] [复制全文] [AI 审查]    │
+└──────────────────────┴──────────────────────────────┴────────────────────────────────┘
+```
+
+**设计与联动要点：**
+
+```text
+✦ 触发时机 — 平时绝不出现 Canvas，保持极简纯对话；仅在用户要求「写 PRD / 方案 / 会议纪要」，或在项目中点击具体 .md 文档时平滑展开
+✦ 双栏分屏协作 — 主视区平滑切换为「左侧对话流 + 右侧 MD Canvas 编辑器」（类似 ChatGPT Canvas），中间支持自由调整宽度或关闭
+✦ AI 实时双向感知 — 用户在 Canvas 中编写或改动 Markdown，后续对话请求会自动将 Canvas 当前最新内容作为上下文传给 Agent，AI 能针对具体章节提出修改意见或局部润色
+✦ 面向产品经理 — 默认模板内置产品经理高频冲突场景（背景陈述、方案取舍 Trade-off、向上管理汇报预期、风险预警机制），全方位赋能「冲突最小化」沟通
 ```
 
 ---
