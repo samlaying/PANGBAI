@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import {
   Check,
   Copy,
   FileText,
   Maximize2,
   Minimize2,
+  Quote,
   Sparkles,
   X,
 } from "lucide-react";
@@ -31,11 +32,46 @@ export function MdCanvas({
 }) {
   const [copied, setCopied] = useState(false);
   const [fullWidth, setFullWidth] = useState(false);
+  const [selectedSnippet, setSelectedSnippet] = useState<string | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const copyContent = () => {
     navigator.clipboard?.writeText(doc.content).catch(() => {});
     setCopied(true);
     setTimeout(() => setCopied(false), 1600);
+  };
+
+  /* 选中文本检测：只保留前 10 个字，剩余加省略号 */
+  const checkSelection = useCallback(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    if (typeof start === "number" && typeof end === "number" && end > start) {
+      const raw = el.value.slice(start, end).trim();
+      if (raw.length > 0) {
+        const snippet = raw.length > 10 ? raw.slice(0, 10) + "…" : raw;
+        setSelectedSnippet(snippet);
+        return;
+      }
+    }
+    setSelectedSnippet(null);
+  }, []);
+
+  /* 快速将选中内容加入对话框进行改变 */
+  const quoteToChat = useCallback(() => {
+    if (!selectedSnippet || !onAskAI) return;
+    onAskAI(`针对「${selectedSnippet}」改一下：`);
+  }, [selectedSnippet, onAskAI]);
+
+  /* 键盘快捷键监听：⌘L / Ctrl+L 快速加入对话框 */
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "l") {
+      if (selectedSnippet) {
+        e.preventDefault();
+        quoteToChat();
+      }
+    }
   };
 
   const wordCount = doc.content.length;
@@ -116,9 +152,35 @@ export function MdCanvas({
 
       {/* 实时 Markdown 编辑区 */}
       <div className="relative flex-1 overflow-y-auto p-4 sm:p-6">
+        {/* 选中浮动快捷条 (Hover / Floating Tooltip) */}
+        {selectedSnippet && (
+          <div className="sticky top-0 z-20 mb-3 flex items-center justify-between border border-rule bg-paper-warm/95 px-3 py-1.5 shadow-sm backdrop-blur-sm transition-all">
+            <div className="flex items-center gap-2 min-w-0">
+              <Quote className="size-3.5 shrink-0 text-accent/80" strokeWidth={1.5} />
+              <span className="truncate font-serif text-[12px] text-ink">
+                选中文段：<span className="font-semibold text-accent">「{selectedSnippet}」</span>
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={quoteToChat}
+              className="flex shrink-0 items-center gap-1.5 border border-rule bg-paper px-2 py-0.5 font-serif text-[11.5px] text-ink-soft transition-colors hover:border-accent hover:text-ink"
+              title="加入对话框 (快捷键 ⌘L)"
+            >
+              <span>加入对话框</span>
+              <kbd className="font-mono text-[9px] text-ink-mute">⌘L</kbd>
+            </button>
+          </div>
+        )}
+
         <textarea
+          ref={textareaRef}
           value={doc.content}
           onChange={(e) => onChange(e.target.value)}
+          onSelect={checkSelection}
+          onMouseUp={checkSelection}
+          onKeyUp={checkSelection}
+          onKeyDown={handleKeyDown}
           placeholder="在此编写或润色 Markdown 方案与 PRD，旁白将在对话中实时感知改动……"
           className="h-full min-h-[480px] w-full resize-none bg-transparent font-mono text-[13.5px] leading-[1.8] text-ink outline-none placeholder:text-ink-mute/50"
           spellCheck={false}
@@ -128,7 +190,7 @@ export function MdCanvas({
       {/* 底部状态微条 */}
       <footer className="flex h-7 shrink-0 items-center justify-between border-t border-rule bg-paper px-4 font-mono text-[9.5px] text-ink-mute">
         <span>CANVAS · 双向实时同步中</span>
-        <span>已由旁白上下文加载</span>
+        <span>选中内容可按 ⌘L 引用至对话</span>
       </footer>
     </section>
   );
