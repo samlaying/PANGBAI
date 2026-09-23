@@ -152,23 +152,18 @@ export function MdCanvas({
 
       {/* 实时 Markdown 编辑区 */}
       <div className="relative flex-1 overflow-y-auto p-4 sm:p-6">
-        {/* 选中浮动快捷条 (Hover / Floating Tooltip) */}
+        {/* 极简微型悬浮按钮：清淡、小巧、仅“引用” */}
         {selectedSnippet && (
-          <div className="sticky top-0 z-20 mb-3 flex items-center justify-between border border-rule bg-paper-warm/95 px-3 py-1.5 shadow-sm backdrop-blur-sm transition-all">
-            <div className="flex items-center gap-2 min-w-0">
-              <Quote className="size-3.5 shrink-0 text-accent/80" strokeWidth={1.5} />
-              <span className="truncate font-serif text-[12px] text-ink">
-                选中文段：<span className="font-semibold text-accent">「{selectedSnippet}」</span>
-              </span>
-            </div>
+          <div className="absolute right-6 top-4 z-20">
             <button
               type="button"
               onClick={quoteToChat}
-              className="flex shrink-0 items-center gap-1.5 border border-rule bg-paper px-2 py-0.5 font-serif text-[11.5px] text-ink-soft transition-colors hover:border-accent hover:text-ink"
-              title="加入对话框 (快捷键 ⌘L)"
+              className="group flex items-center gap-1.5 border border-rule bg-paper/95 px-2 py-1 shadow-xs backdrop-blur-xs transition-all hover:border-ink/50 hover:bg-paper-warm"
+              title={`引用「${selectedSnippet}」到对话框 (⌘L)`}
             >
-              <span>加入对话框</span>
-              <kbd className="font-mono text-[9px] text-ink-mute">⌘L</kbd>
+              <Quote className="size-3 text-ink-mute transition-colors group-hover:text-accent" strokeWidth={1.5} />
+              <span className="font-serif text-[11.5px] text-ink-soft group-hover:text-ink">引用</span>
+              <kbd className="font-mono text-[8.5px] text-ink-mute">⌘L</kbd>
             </button>
           </div>
         )}
