@@ -101,6 +101,24 @@ export type ChatMessage =
   | { id: string; role: "user"; time: string; text: string }
   | { id: string; role: "assistant"; time: string; blocks: Block[] };
 
+/* ── 对话 ── */
+
+export interface ConversationOpener {
+  kicker: string;
+  title: string;
+  standfirst: string;
+  metas: string[];
+}
+
+export interface Conversation {
+  id: string;
+  title: string;
+  time: string; // 列表显示用：刚刚 / 3天前 / 上周
+  group: "今天" | "本周" | "更早";
+  opener?: ConversationOpener;
+  messages: ChatMessage[];
+}
+
 /* ── 成长 ── */
 
 export interface GrowthRadarAxis {

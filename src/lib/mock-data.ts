@@ -1,5 +1,6 @@
 import type {
   ChatMessage,
+  Conversation,
   EvidenceItem,
   Growth,
   Meeting,
@@ -205,7 +206,8 @@ export const PROJECTS: Project[] = [
   },
 ];
 
-export const projectById = (id: string) => PROJECTS.find((p) => p.id === id);
+export const projectById = (id: string, list: Project[] = PROJECTS) =>
+  list.find((p) => p.id === id);
 
 /* ── 会议 ─────────────────────────────────── */
 
@@ -287,7 +289,7 @@ export const GROWTH: Growth = {
 
 /* ── 演示对话 ─────────────────────────────── */
 
-export const CONVERSATION: ChatMessage[] = [
+const DEMO_MESSAGES: ChatMessage[] = [
   {
     id: "u1",
     role: "user",
@@ -320,6 +322,92 @@ export const CONVERSATION: ChatMessage[] = [
       { kind: "para", text: "要不要我帮你想想，他接下来会追问什么？" },
       { kind: "actions" },
       { kind: "source" },
+    ],
+  },
+];
+
+export const INITIAL_CONVERSATIONS: Conversation[] = [
+  {
+    id: "c-demo",
+    title: "王总问「为什么还没做完」",
+    time: "14:31",
+    group: "今天",
+    opener: {
+      kicker: "本期实录 · CONVERSATION",
+      title: "关于王总那句「为什么还没做完」",
+      standfirst:
+        "一句群里的追问，背后是一段没被提前说出的风险。旁白翻出了四条旧记录，把这件事的来龙去脉摆在桌面上。",
+      metas: ["记录 · 9月23日 14:31", "涉及 · 王总 / 招聘 Agent v2", "字数 · 约 400"],
+    },
+    messages: DEMO_MESSAGES,
+  },
+  {
+    id: "c-li",
+    title: "和李总对接口排期",
+    time: "3天前",
+    group: "本周",
+    opener: {
+      kicker: "本篇实录 · CONVERSATION",
+      title: "和李总对接口排期之前",
+      standfirst: "跨部门的一次排期对齐。旁白提醒：带取舍去谈，别只给结论。",
+      metas: ["记录 · 9月20日 10:02", "涉及 · 李总", "字数 · 约 120"],
+    },
+    messages: [
+      {
+        id: "li-u1",
+        role: "user",
+        time: "10:02",
+        text: "和李总约了明天对接口排期，有什么要注意的？",
+      },
+      {
+        id: "li-a1",
+        role: "assistant",
+        time: "10:02",
+        blocks: [
+          {
+            kind: "para",
+            dropcap: true,
+            text: "[李总](person:li)重视技术完整性——和他谈排期，结论之外要带上方案的技术取舍。",
+          },
+          {
+            kind: "para",
+            text: "他偏好书面确认（74%）。建议先发一页书面摘要，会上一遍过。",
+          },
+        ],
+      },
+    ],
+  },
+  {
+    id: "c-review",
+    title: "复盘：需求评审会",
+    time: "上周",
+    group: "更早",
+    opener: {
+      kicker: "往期实录 · CONVERSATION",
+      title: "需求评审会上被问住了",
+      standfirst: "一次不太舒服的复盘。结论：被问住不丢人，丢的是没提前想备选。",
+      metas: ["记录 · 9月12日 17:40", "涉及 · 张哥", "字数 · 约 90"],
+    },
+    messages: [
+      {
+        id: "rv-u1",
+        role: "user",
+        time: "17:40",
+        text: "今天需求评审会被问住了，帮我复盘下。",
+      },
+      {
+        id: "rv-a1",
+        role: "assistant",
+        time: "17:41",
+        blocks: [
+          {
+            kind: "para",
+            dropcap: true,
+            text: "被问住不丢人——丢的是没提前想备选。这次卡住你的问题是「降级方案是什么」。",
+          },
+          { kind: "para", text: "下次带上 Plan B 去。到时我提醒你。" },
+        ],
+      },
     ],
   },
 ];

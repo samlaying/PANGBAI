@@ -15,6 +15,8 @@ export interface UIActions {
   /** 关掉所有浮层，把问题回填到输入框 */
   ask: (text: string) => void;
   startRehearsal: () => void;
+  /** 打开项目索引并进入新建模式 */
+  createProject: () => void;
 }
 
 export const UIContext = createContext<UIActions | null>(null);

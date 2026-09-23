@@ -14,7 +14,7 @@ import {
   Send,
   X,
 } from "lucide-react";
-import type { Block, ChatMessage } from "@/lib/types";
+import type { Block, ChatMessage, ConversationOpener } from "@/lib/types";
 import { ME, personById } from "@/lib/mock-data";
 import { useUI } from "../ui-context";
 import { FlowerDivider } from "../atoms";
@@ -392,11 +392,13 @@ export function Rehearsal({ onExit }: { onExit: () => void }) {
 
 /* ── 主对话流 ── */
 export function ChatFlow({
+  opener,
   messages,
   typing,
   rehearsal,
   onExitRehearsal,
 }: {
+  opener?: ConversationOpener;
   messages: ChatMessage[];
   typing: boolean;
   rehearsal: boolean;
@@ -404,24 +406,23 @@ export function ChatFlow({
 }) {
   return (
     <div className="mx-auto max-w-[680px] px-6 pb-16 pt-12">
-      {/* 本期开篇 */}
-      <header className="mb-12">
-        <div className="kicker">本期实录 · CONVERSATION</div>
-        <h1 className="mt-3 font-serif text-[34px] font-black leading-[1.3] tracking-[0.02em]">
-          关于王总那句
-          <br />
-          「为什么还没做完」
-        </h1>
-        <p className="mt-4 font-serif text-[15.5px] leading-[1.9] text-ink-soft">
-          一句群里的追问，背后是一段没被提前说出的风险。旁白翻出了四条旧记录，
-          把这件事的来龙去脉摆在桌面上。
-        </p>
-        <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-1 border-y border-rule py-2.5 font-mono text-[10.5px] tracking-[0.1em] text-ink-mute">
-          <span>记录 · 9月23日 14:31</span>
-          <span>涉及 · 王总 / 招聘 Agent v2</span>
-          <span>字数 · 约 400</span>
-        </div>
-      </header>
+      {/* 开篇题记 */}
+      {opener && (
+        <header className="mb-12">
+          <div className="kicker">{opener.kicker}</div>
+          <h1 className="mt-3 font-serif text-[34px] font-black leading-[1.3] tracking-[0.02em]">
+            {opener.title}
+          </h1>
+          <p className="mt-4 font-serif text-[15.5px] leading-[1.9] text-ink-soft">
+            {opener.standfirst}
+          </p>
+          <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-1 border-y border-rule py-2.5 font-mono text-[10.5px] tracking-[0.1em] text-ink-mute">
+            {opener.metas.map((m) => (
+              <span key={m}>{m}</span>
+            ))}
+          </div>
+        </header>
+      )}
 
       <div className="space-y-12">
         {messages.map((msg) =>
