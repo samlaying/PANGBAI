@@ -7,7 +7,6 @@ import {
   Check,
   ChevronDown,
   Copy,
-  CornerDownLeft,
   Drama,
   FileText,
   Lightbulb,
@@ -30,14 +29,13 @@ function EntityText({ text }: { text: string }) {
   const ui = useUI();
   const nodes: ReactNode[] = [];
   let last = 0;
-  let m: RegExpExecArray | null;
-  ENTITY_RE.lastIndex = 0;
-  while ((m = ENTITY_RE.exec(text)) !== null) {
-    if (m.index > last) nodes.push(text.slice(last, m.index));
+  for (const m of text.matchAll(ENTITY_RE)) {
+    const matchIndex = m.index ?? 0;
+    if (matchIndex > last) nodes.push(text.slice(last, matchIndex));
     const [, label, kind, id] = m;
     nodes.push(
       <button
-        key={`${m.index}-${label}`}
+        key={`${matchIndex}-${label}`}
         type="button"
         onClick={(e) => {
           e.stopPropagation();
