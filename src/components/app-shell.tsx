@@ -229,10 +229,6 @@ export function AppShell() {
         <Masthead
           notifOpen={notifOpen}
           setNotifOpen={setNotifOpen}
-          onSearch={() => {
-            setNotifOpen(false);
-            setCommandOpen(true);
-          }}
         />
 
         <div className="flex min-h-0 flex-1">
@@ -247,6 +243,10 @@ export function AppShell() {
             onOpenProject={(id) => setPanel({ type: "project", id })}
             onNewProject={createProject}
             onToggle={() => setSidebarCollapsed((v) => !v)}
+            onSearch={() => {
+              setNotifOpen(false);
+              setCommandOpen(true);
+            }}
           />
 
           <div className="flex min-w-0 flex-1 flex-col">

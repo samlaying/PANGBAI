@@ -405,26 +405,29 @@ export function ChatFlow({
   onExitRehearsal: () => void;
 }) {
   return (
-    <div className="mx-auto max-w-[680px] px-6 pb-16 pt-12">
-      {/* 开篇题记 */}
+    <div className="mx-auto max-w-[720px] px-6 pb-16 pt-5">
+      {/* 紧凑会话情境条 */}
       {opener && (
-        <header className="mb-12">
-          <div className="kicker">{opener.kicker}</div>
-          <h1 className="mt-3 font-serif text-[34px] font-black leading-[1.3] tracking-[0.02em]">
-            {opener.title}
-          </h1>
-          <p className="mt-4 font-serif text-[15.5px] leading-[1.9] text-ink-soft">
-            {opener.standfirst}
-          </p>
-          <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-1 border-y border-rule py-2.5 font-mono text-[10.5px] tracking-[0.1em] text-ink-mute">
-            {opener.metas.map((m) => (
-              <span key={m}>{m}</span>
-            ))}
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-2 border-b border-rule pb-2.5">
+          <div className="flex items-center gap-2.5">
+            <span className="font-serif text-[14.5px] font-bold text-ink">
+              {opener.title}
+            </span>
+            {opener.metas[0] && (
+              <span className="font-mono text-[10px] tracking-[0.06em] text-ink-mute">
+                {opener.metas[0]}
+              </span>
+            )}
           </div>
-        </header>
+          {opener.metas[1] && (
+            <span className="font-mono text-[10px] tracking-[0.06em] text-ink-soft bg-paper-deep px-2 py-0.5">
+              {opener.metas[1]}
+            </span>
+          )}
+        </div>
       )}
 
-      <div className="space-y-12">
+      <div className="space-y-10">
         {messages.map((msg) =>
           msg.role === "user" ? (
             <UserLetter key={msg.id} msg={msg} />

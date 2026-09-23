@@ -5,6 +5,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
+  Search,
   SquarePen,
   Trash2,
 } from "lucide-react";
@@ -23,6 +24,7 @@ export function Sidebar({
   onOpenProject,
   onNewProject,
   onToggle,
+  onSearch,
 }: {
   conversations: Conversation[];
   activeId: string;
@@ -34,6 +36,7 @@ export function Sidebar({
   onOpenProject: (id: string) => void;
   onNewProject: () => void;
   onToggle: () => void;
+  onSearch: () => void;
 }) {
   if (collapsed) {
     return (
@@ -58,6 +61,15 @@ export function Sidebar({
         </button>
         <button
           type="button"
+          onClick={onSearch}
+          aria-label="检索 (⌘K)"
+          title="检索 (⌘K)"
+          className="grid size-9 place-items-center text-ink-mute transition-colors hover:bg-paper-deep hover:text-ink"
+        >
+          <Search className="size-4" strokeWidth={1.5} />
+        </button>
+        <button
+          type="button"
           onClick={onNewProject}
           aria-label="新建项目"
           title="新建项目"
@@ -72,7 +84,7 @@ export function Sidebar({
   return (
     <aside className="flex w-[264px] shrink-0 flex-col border-r border-rule">
       {/* 顶部：目录 + 折叠 */}
-      <div className="flex items-center justify-between px-4 pb-3 pt-4">
+      <div className="flex items-center justify-between px-4 pb-2.5 pt-3">
         <span className="kicker">目录 · CONTENTS</span>
         <button
           type="button"
@@ -84,20 +96,32 @@ export function Sidebar({
         </button>
       </div>
 
-      {/* 新对话 */}
-      <div className="px-4">
+      {/* 新对话与快速搜索 */}
+      <div className="space-y-2 px-4">
         <button
           type="button"
           onClick={onNew}
-          className="flex w-full items-center justify-center gap-2 bg-ink py-2.5 font-serif text-[13.5px] text-paper transition-colors hover:bg-accent"
+          className="flex w-full items-center justify-center gap-2 bg-ink py-2 font-serif text-[13.5px] text-paper transition-colors hover:bg-accent"
         >
           <SquarePen className="size-4" strokeWidth={1.5} />
           新对话
         </button>
+
+        <button
+          type="button"
+          onClick={onSearch}
+          className="flex w-full items-center justify-between border border-rule bg-paper-warm px-3 py-1.5 text-left transition-colors hover:border-ink-mute"
+        >
+          <span className="flex items-center gap-2 truncate font-serif text-[12.5px] text-ink-mute">
+            <Search className="size-3.5 shrink-0" strokeWidth={1.5} />
+            检索记录、人物…
+          </span>
+          <kbd className="font-mono text-[9.5px] text-ink-mute">⌘K</kbd>
+        </button>
       </div>
 
       {/* 对话列表 */}
-      <div className="mt-4 flex-1 overflow-y-auto px-2 pb-4">
+      <div className="mt-3 flex-1 overflow-y-auto px-2 pb-4">
         {GROUP_ORDER.map((group) => {
           const items = conversations.filter((c) => c.group === group);
           if (items.length === 0) return null;
