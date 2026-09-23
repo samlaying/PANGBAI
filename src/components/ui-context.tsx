@@ -5,6 +5,7 @@ import { createContext, useContext } from "react";
 export interface UIActions {
   openPerson: (id: string) => void;
   openProject: (id: string) => void;
+  openProjectDocs: (projectId: string) => void;
   openMeeting: () => void;
   openEvidence: (id: string) => void;
   openGrowth: () => void;

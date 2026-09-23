@@ -26,9 +26,46 @@ const SYSTEM_PROMPT_BASE = `你是一位顶级个人 AI 职场导师，名字叫
 
 export async function POST(req: NextRequest) {
   try {
-    const { messages, activeCanvas } = await req.json();
+    const { messages, activeCanvas, activeProject, projectArtifacts } =
+      await req.json();
 
     let systemPrompt = SYSTEM_PROMPT_BASE;
+
+    // 注入当前关联的项目与已有产物上下文（跨会话感知）
+    if (activeProject) {
+      systemPrompt += `\n\n【当前聚焦的项目空间】
+项目名称: ${activeProject.name}
+项目状态: ${activeProject.status || "进行中"} (当前进度 ${activeProject.progress || 0}%)
+截止日期: ${activeProject.deadline || "未定"}
+项目风险清单: ${(activeProject.risks || []).map((r: { title: string; note: string }) => `${r.title} (${r.note})`).join("； ") || "无待处理重大风险"}
+旁白策略备忘: ${activeProject.advice || "无"}
+
+【该项目下已归档/正在协同的活文档与产物】:
+${(projectArtifacts || [])
+  .map(
+    (art: {
+      title: string;
+      frontmatter?: {
+        type?: string;
+        progress?: string;
+        expected_solution?: string;
+        stakeholders?: string[];
+      };
+    }) =>
+      `- 《${art.title}》 (类型: ${art.frontmatter?.type || "文档"}, 状态: ${art.frontmatter?.progress || "进行中"}, 涉及人: ${(art.frontmatter?.stakeholders || []).join(", ")})
+  预期方案解法: ${art.frontmatter?.expected_solution || "待补齐"}`
+  )
+  .join("\n")}
+
+【关于打磨高质量 PRD 与方案架构的核心指导原则】:
+当用户提出关于撰写、梳理、打磨 PRD、需求方案或复盘时：
+1. **绝不机械输出几千字冗长空洞的套话**，保持轻快灵活，不给用户增加认知负担。
+2. **第一步：先给出「预期方案与取舍（Expected Solution & Trade-offs）」**：
+   清晰阐明我们预期做成什么方案、核心业务机制是什么，以及面临时间或资源限制时的 Trade-off（如方案 A 保期 vs 方案 B 全量），把控领导（如王总）与协作方（如李总）的预期。
+3. **第二步：输出结构清晰的「文档大体架构骨架（Skeleton Outline）」**：
+   给出各层级骨架标题与精简的提示点，方便用户只需补充细节即可完成高质量产出。
+4. **第三步：提供规范的 YAML Frontmatter 头部结构**（包含 title, type, date, progress, stakeholders, expected_solution, risk_points 等），便于作为项目资产挂载和检索！`;
+    }
 
     // 若当前正在编辑 Canvas（如 PRD、方案），动态挂载为当前核心工作文档
     if (activeCanvas && activeCanvas.content) {

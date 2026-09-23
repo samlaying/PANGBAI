@@ -52,6 +52,42 @@ export interface Milestone {
   state: "done" | "warn" | "todo";
 }
 
+/* ── 项目产物与 YAML Frontmatter 规范 ── */
+
+export type ArtifactType =
+  | "prd" // 产品需求文档
+  | "solution_brief" // 预期方案与架构
+  | "competitive_analysis" // 竞品分析
+  | "review_retrospective" // 复盘报告
+  | "meeting_notes"; // 会议纪要与备忘
+
+export interface ArtifactYamlFrontmatter {
+  title: string;
+  type: ArtifactType;
+  date: string; // 产出/更新时间 (YYYY-MM-DD)
+  progress: "draft" | "in_review" | "aligned" | "completed"; // 进度/阶段
+  stakeholders: string[]; // 涉及人 (如 ["王总", "李总", "张明"])
+  version?: string; // 版本号 (如 "v2.0-draft")
+  expected_solution?: string; // 预期做成什么方案（核心业务解法）
+  risk_points?: string[]; // 涉及的潜在风险点
+  notes?: string; // 备注说明
+  retrospective?: {
+    // 复盘专用
+    successes: string[];
+    friction_points: string[];
+    action_items: string[];
+  };
+}
+
+export interface ProjectArtifact {
+  id: string;
+  projectId: string;
+  title: string;
+  frontmatter: ArtifactYamlFrontmatter;
+  content: string; // Markdown 正文 (含标准 YAML Frontmatter)
+  updatedAt: string;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -63,6 +99,7 @@ export interface Project {
   milestones: Milestone[];
   members: string[]; // person id，"me" 除外
   advice: string;
+  artifacts?: ProjectArtifact[];
 }
 
 export interface Meeting {
@@ -117,6 +154,7 @@ export interface Conversation {
   group: "今天" | "本周" | "更早";
   opener?: ConversationOpener;
   messages: ChatMessage[];
+  projectId?: string; // 关联所属项目（如 "recruiting"）
 }
 
 /* ── 成长 ── */

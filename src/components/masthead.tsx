@@ -1,6 +1,7 @@
 "use client";
 
-import { Bell, ChevronDown, FileText, PanelLeftOpen } from "lucide-react";
+import { Bell, BookOpen, ChevronDown, FileText, FolderOpen, PanelLeftOpen } from "lucide-react";
+import type { Project } from "@/lib/types";
 import { ME } from "@/lib/mock-data";
 import { useUI } from "./ui-context";
 import { Notifications } from "./overlays/notifications";
@@ -13,6 +14,7 @@ export function Masthead({
   onToggleSidebar,
   canvasOpen,
   onToggleCanvas,
+  project,
 }: {
   notifOpen: boolean;
   setNotifOpen: (v: boolean) => void;
@@ -21,6 +23,7 @@ export function Masthead({
   onToggleSidebar?: () => void;
   canvasOpen?: boolean;
   onToggleCanvas?: () => void;
+  project?: Project | null;
 }) {
   const ui = useUI();
 
@@ -28,7 +31,7 @@ export function Masthead({
     <header className="shrink-0 border-b border-rule bg-paper">
       <div className="flex h-12 items-center justify-between px-4 sm:px-6">
         {/* 左侧：折叠展开控制与当前会话标题 */}
-        <div className="flex items-center gap-3 min-w-0">
+        <div className="flex items-center gap-2.5 min-w-0">
           {sidebarCollapsed && (
             <button
               type="button"
@@ -39,6 +42,26 @@ export function Masthead({
               <PanelLeftOpen className="size-4" strokeWidth={1.5} />
             </button>
           )}
+
+          {project && (
+            <button
+              type="button"
+              onClick={() => ui.openProject(project.id)}
+              className="group flex shrink-0 items-center gap-1.5 border border-rule bg-paper-warm/80 px-2 py-0.5 transition-colors hover:border-ink"
+              title="点击查看项目档案与风险透视"
+            >
+              <FolderOpen className="size-3 text-ink-mute group-hover:text-accent" strokeWidth={1.5} />
+              <span className="font-serif text-[12px] font-semibold text-ink">
+                {project.name}
+              </span>
+              {project.riskCount > 0 && (
+                <span className="font-mono text-[9px] text-vermilion">
+                  ⚠{project.riskCount}
+                </span>
+              )}
+            </button>
+          )}
+
           {activeTitle && (
             <h2 className="truncate font-serif text-[14px] font-semibold text-ink">
               {activeTitle}
@@ -46,8 +69,19 @@ export function Masthead({
           )}
         </div>
 
-        {/* 右侧：通知、Canvas 开关与用户菜单 */}
+        {/* 右侧：通知、文档库、Canvas 开关与用户菜单 */}
         <div className="relative flex items-center gap-2 shrink-0">
+          {project && (
+            <button
+              type="button"
+              onClick={() => ui.openProjectDocs(project.id)}
+              className="flex items-center gap-1.5 border border-rule bg-paper px-2.5 py-1 font-serif text-[12px] text-ink-soft transition-colors hover:border-ink hover:text-ink"
+              title="统一管理该项目下的 PRD、竞品与复盘活文档"
+            >
+              <BookOpen className="size-3.5 text-accent" strokeWidth={1.5} />
+              <span>文档库 ({project.artifacts?.length ?? 0})</span>
+            </button>
+          )}
           {onToggleCanvas && (
             <button
               type="button"

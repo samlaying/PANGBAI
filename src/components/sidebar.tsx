@@ -142,6 +142,9 @@ export function Sidebar({
               <ul>
                 {items.map((c) => {
                   const active = c.id === activeId;
+                  const proj = c.projectId
+                    ? projects.find((p) => p.id === c.projectId)
+                    : null;
                   return (
                     <li key={c.id} className="group/item relative">
                       <button
@@ -160,9 +163,16 @@ export function Sidebar({
                         >
                           {c.title}
                         </span>
-                        <span className="block font-mono text-[9.5px] tracking-[0.06em] text-ink-mute">
-                          {c.time} · {c.messages.length} 则
-                        </span>
+                        <div className="flex items-center gap-1.5 font-mono text-[9.5px] tracking-[0.04em] text-ink-mute">
+                          <span>
+                            {c.time} · {c.messages.length} 则
+                          </span>
+                          {proj && (
+                            <span className="truncate rounded-xs border border-rule bg-paper-warm/90 px-1 py-0.2 text-[8.5px] text-ink-soft">
+                              {proj.name}
+                            </span>
+                          )}
+                        </div>
                       </button>
                       <button
                         type="button"

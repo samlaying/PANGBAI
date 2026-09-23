@@ -24,6 +24,7 @@ import { MeetingPanel } from "./panels/meeting-panel";
 import { SettingsPanel } from "./panels/settings-panel";
 import { EvidenceModal } from "./modals/evidence-modal";
 import { GrowthModal } from "./modals/growth-modal";
+import { ProjectDocsModal } from "./modals/project-docs-modal";
 import { CommandMenu } from "./overlays/command-menu";
 import { ProactiveCard } from "./overlays/proactive-card";
 import { UIContext, type UIActions } from "./ui-context";
@@ -115,17 +116,19 @@ type PanelState =
 type ModalState =
   | { type: "evidence"; id: string }
   | { type: "growth" }
+  | { type: "projectDocs"; projectId: string }
   | null;
 
 let idSeq = 0;
 const nextId = () => `m${++idSeq}`;
 
-const newConversation = (): Conversation => ({
+const newConversation = (projectId?: string): Conversation => ({
   id: nextId(),
   title: "新的对话",
   time: "刚刚",
   group: "今天",
   messages: [],
+  projectId,
 });
 
 export function AppShell() {
@@ -151,6 +154,9 @@ export function AppShell() {
 
   const activeConv =
     conversations.find((c) => c.id === activeConvId) ?? conversations[0];
+  const activeProject = activeConv?.projectId
+    ? projects.find((p) => p.id === activeConv.projectId) ?? null
+    : null;
 
   /* 检查并唤出 Canvas */
   const openDefaultCanvas = useCallback((title = "招聘 Agent v2 PRD 核心方案.md") => {
@@ -249,8 +255,11 @@ export function AppShell() {
       let streamAccumulator = "";
 
       try {
-        // 构建请求上下文
         const currentConv = conversations.find((c) => c.id === convId);
+        const currentProject = currentConv?.projectId
+          ? projects.find((p) => p.id === currentConv.projectId)
+          : null;
+
         const history = (currentConv?.messages || []).map((m) => ({
           role: m.role,
           content: m.role === "user" ? m.text : "已提供建议",
@@ -264,6 +273,20 @@ export function AppShell() {
             activeCanvas: activeCanvas
               ? { title: activeCanvas.title, content: activeCanvas.content }
               : undefined,
+            activeProject: currentProject
+              ? {
+                  id: currentProject.id,
+                  name: currentProject.name,
+                  status: currentProject.status,
+                  deadline: currentProject.deadline,
+                  progress: currentProject.progress,
+                  riskCount: currentProject.riskCount,
+                  risks: currentProject.risks,
+                  milestones: currentProject.milestones,
+                  advice: currentProject.advice,
+                }
+              : undefined,
+            projectArtifacts: currentProject?.artifacts || [],
           }),
         });
 
@@ -337,20 +360,46 @@ export function AppShell() {
     setRehearsal(false);
   }, []);
 
+  const openProjectWorkspace = useCallback(
+    (projectId: string) => {
+      // 查找该项目已有会话，或新建该项目专属会话
+      const existing = conversations.find((c) => c.projectId === projectId);
+      if (existing) {
+        setActiveConvId(existing.id);
+      } else {
+        const proj = projects.find((p) => p.id === projectId);
+        const conv = newConversation(projectId);
+        if (proj) conv.title = `${proj.name} · 新会话`;
+        setConversations((cs) => [conv, ...cs]);
+        setActiveConvId(conv.id);
+      }
+      setRehearsal(false);
+      setPanel(null);
+    },
+    [conversations, projects]
+  );
+
   const startNewConversation = useCallback(() => {
-    // 幂等保护：如果已有空会话（尤其是最新的空会话），直接切换过去，不重复创建
-    const emptyConv = conversations.find((c) => c.messages.length === 0);
+    // 继承当前项目（若处于某个项目会话中），并提供幂等保护
+    const targetProjectId = activeConv?.projectId;
+    const emptyConv = conversations.find(
+      (c) => c.messages.length === 0 && c.projectId === targetProjectId
+    );
     if (emptyConv) {
       setActiveConvId(emptyConv.id);
       setRehearsal(false);
       return;
     }
 
-    const conv = newConversation();
+    const proj = targetProjectId
+      ? projects.find((p) => p.id === targetProjectId)
+      : null;
+    const conv = newConversation(targetProjectId);
+    if (proj) conv.title = `${proj.name} · 会话`;
     setConversations((cs) => [conv, ...cs]);
     setActiveConvId(conv.id);
     setRehearsal(false);
-  }, [conversations]);
+  }, [conversations, activeConv?.projectId, projects]);
 
   const deleteConversation = useCallback(
     (id: string) => {
@@ -372,6 +421,7 @@ export function AppShell() {
   const ui: UIActions = {
     openPerson: (id) => setPanel({ type: "person", id }),
     openProject: (id) => setPanel({ type: "project", id }),
+    openProjectDocs: (projectId) => setModal({ type: "projectDocs", projectId }),
     openMeeting: () => setPanel({ type: "meeting" }),
     openEvidence: (id) => setModal({ type: "evidence", id }),
     openGrowth: () => setModal({ type: "growth" }),
@@ -412,7 +462,7 @@ export function AppShell() {
           onSelect={selectConversation}
           onNew={startNewConversation}
           onDelete={deleteConversation}
-          onOpenProject={(id) => setPanel({ type: "project", id })}
+          onOpenProject={(id) => openProjectWorkspace(id)}
           onNewProject={createProject}
           onToggle={() => setSidebarCollapsed((v) => !v)}
           onSearch={() => {
@@ -433,6 +483,7 @@ export function AppShell() {
               if (activeCanvas) setActiveCanvas(null);
               else openDefaultCanvas();
             }}
+            project={activeProject}
           />
 
           <main className="flex min-h-0 flex-1 overflow-hidden">
@@ -454,11 +505,24 @@ export function AppShell() {
             {activeCanvas && (
               <MdCanvas
                 doc={activeCanvas}
-                onChange={(content) =>
+                onChange={(content) => {
                   setActiveCanvas((prev) =>
                     prev ? { ...prev, content, updatedAt: "刚刚" } : null,
-                  )
-                }
+                  );
+                  // 同步更新到所属项目 artifacts
+                  if (activeCanvas?.id) {
+                    setProjects((prev) =>
+                      prev.map((p) => ({
+                        ...p,
+                        artifacts: p.artifacts?.map((art) =>
+                          art.id === activeCanvas.id
+                            ? { ...art, content, updatedAt: "刚刚" }
+                            : art,
+                        ),
+                      })),
+                    );
+                  }
+                }}
                 onClose={() => setActiveCanvas(null)}
                 onAskAI={ask}
               />
@@ -514,6 +578,20 @@ export function AppShell() {
       )}
       {modal?.type === "growth" && (
         <GrowthModal onClose={() => setModal(null)} />
+      )}
+      {modal?.type === "projectDocs" && projectById(modal.projectId, projects) && (
+        <ProjectDocsModal
+          project={projectById(modal.projectId, projects)!}
+          onClose={() => setModal(null)}
+          onOpenInCanvas={(art) => {
+            setActiveCanvas({
+              id: art.id,
+              title: art.title,
+              content: art.content,
+              updatedAt: art.updatedAt,
+            });
+          }}
+        />
       )}
 
       {/* Layer 0 · ⌘K 检索 */}

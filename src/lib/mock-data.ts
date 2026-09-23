@@ -187,6 +187,153 @@ export const PROJECTS: Project[] = [
     ],
     members: ["wang", "li", "zhang", "me"],
     advice: "两个风险都没同步。建议今晚先发条消息给王总，别拖到评审会。",
+    artifacts: [
+      {
+        id: "art-prd-recruiting",
+        projectId: "recruiting",
+        title: "招聘 Agent v2 核心方案与 PRD",
+        updatedAt: "刚刚",
+        frontmatter: {
+          title: "招聘 Agent v2 核心方案与 PRD",
+          type: "prd",
+          date: "2026-09-23",
+          progress: "in_review",
+          stakeholders: ["王总", "李总", "张哥", "张明"],
+          version: "v2.0-rc",
+          expected_solution: "先交付基于标准库的初筛 Agent 闭环，次要字段规则兜底，保证周四如期向客户演示",
+          risk_points: ["数据标注延迟 3 天未同步王总", "后端 schema 接口时序待对齐"],
+          notes: "周四向客户演示前需确保核心主流程可跑通",
+        },
+        content: `---
+title: "招聘 Agent v2 核心方案与 PRD"
+type: prd
+date: "2026-09-23"
+progress: in_review
+stakeholders:
+  - 王总
+  - 李总
+  - 张哥
+  - 张明
+version: "v2.0-rc"
+expected_solution: "先交付基于标准库的初筛 Agent 闭环，次要字段规则兜底，保证周四如期向客户演示"
+risk_points:
+  - "数据标注延迟 3 天未同步王总"
+  - "后端 schema 接口时序待对齐"
+notes: "周四向客户演示前需确保核心主流程可跑通"
+---
+
+# 招聘 Agent v2 核心方案与 PRD
+
+## 1. 业务背景与预期
+- 目标：将初筛效率提升 40%，周四需向王总与客户演示初版。
+- 现状卡点：数据标注由于样本复杂性延期 3 天，当前综合进度 65%。
+
+## 2. 方案与取舍（Trade-off）
+- **方案 A（保期交付核心链路，推荐）**：
+  优先打通「简历解析 + 核心能力打分」，次要字段暂用规则兜底。可保证周四如期演示。
+- **方案 B（全量精准交付）**：
+  等待全部标注完毕再行评估，交付整体延后至下周二。
+
+## 3. 向上沟通与跨部门协同
+- 需在今晚下班前向王总主动同步，避免评审会上被动质询。
+- 与李总对齐接口技术取舍，争取后端去重中间件支持。`,
+      },
+      {
+        id: "art-comp-recruiting",
+        projectId: "recruiting",
+        title: "智能初筛竞品分析与行业对标",
+        updatedAt: "3天前",
+        frontmatter: {
+          title: "智能初筛竞品分析与行业对标",
+          type: "competitive_analysis",
+          date: "2026-09-20",
+          progress: "aligned",
+          stakeholders: ["王总", "张明"],
+          version: "v1.1",
+          expected_solution: "借鉴市面大模型+规则双筛机制，重点补足人岗匹配解释性与隐私安全红线",
+          notes: "李总认可技术路径，关注高并发推理成本",
+        },
+        content: `---
+title: "智能初筛竞品分析与行业对标"
+type: competitive_analysis
+date: "2026-09-20"
+progress: aligned
+stakeholders:
+  - 王总
+  - 张明
+version: "v1.1"
+expected_solution: "借鉴市面大模型+规则双筛机制，重点补足人岗匹配解释性与隐私安全红线"
+notes: "李总认可技术路径，关注高并发推理成本"
+---
+
+# 智能初筛竞品分析与行业对标
+
+## 1. 竞品能力矩阵
+- **竞品 A**：主打即时人岗匹配分数，缺乏可解释性，面试官信任度低。
+- **竞品 B**：支持自然语言问答交互筛选，但推理耗时较长（>3s）。
+- **我们的差异化优势**：兼顾秒级初筛与关键证据引用（Evidence-backed scoring）。
+
+## 2. 核心架构建议
+- 采用冷热双通道架构：基础硬性条件走规则缓存，主观匹配度走轻量 Agent 评估。`,
+      },
+      {
+        id: "art-retro-recruiting",
+        projectId: "recruiting",
+        title: "需求评审会沟通与协同复盘",
+        updatedAt: "上周",
+        frontmatter: {
+          title: "需求评审会沟通与协同复盘",
+          type: "review_retrospective",
+          date: "2026-09-16",
+          progress: "completed",
+          stakeholders: ["王总", "李总", "张明"],
+          notes: "7月8日同类事件历史复盘沉淀",
+          retrospective: {
+            successes: [
+              "锁定 v2 核心范围，砍掉了 2 个非核心报表模块",
+              "与张哥提前敲定了基础数据格式",
+            ],
+            friction_points: [
+              "风险未在会前提前同步王总，导致开场氛围紧张",
+              "向李总提接口排期时未准备备选方案",
+            ],
+            action_items: [
+              "重大评审前 24h 发送一页纸备忘",
+              "凡涉及排期变动，必带方案 A / 方案 B 取舍",
+            ],
+          },
+        },
+        content: `---
+title: "需求评审会沟通与协同复盘"
+type: review_retrospective
+date: "2026-09-16"
+progress: completed
+stakeholders:
+  - 王总
+  - 李总
+  - 张明
+retrospective:
+  successes:
+    - "锁定 v2 核心范围，砍掉了 2 个非核心报表模块"
+    - "与张哥提前敲定了基础数据格式"
+  friction_points:
+    - "风险未在会前提前同步王总，导致开场氛围紧张"
+    - "向李总提接口排期时未准备备选方案"
+  action_items:
+    - "重大评审前 24h 发送一页纸备忘"
+    - "凡涉及排期变动，必带方案 A / 方案 B 取舍"
+---
+
+# 需求评审会沟通与协同复盘
+
+## 一、 复盘背景
+本次评审会上就初筛排期与技术选型发生了预期外的争执，为避免后续再次出现信息不对称，进行结构化复盘。
+
+## 二、 关键得失
+- **做得好的**：范围边界清晰，未让客户的新需求无序蔓延。
+- **教训与阻力**：王总在会上当众追问，说明会前缺乏非正式对齐；李总对临时推过来的排期持防守态度。`,
+      },
+    ],
   },
   {
     id: "kb",
@@ -202,6 +349,41 @@ export const PROJECTS: Project[] = [
     ],
     members: ["zhang", "me"],
     advice: "还在规划期，先不动手，等招聘 Agent 交付后再启动。",
+    artifacts: [
+      {
+        id: "art-brief-kb",
+        projectId: "kb",
+        title: "内部知识库改版方案概要与调研",
+        updatedAt: "2周前",
+        frontmatter: {
+          title: "内部知识库改版方案概要与调研",
+          type: "solution_brief",
+          date: "2026-09-10",
+          progress: "draft",
+          stakeholders: ["张明", "张哥"],
+          version: "v0.1",
+          expected_solution: "打通部门文档与代码知识，构建轻量检索 Agent",
+          notes: "优先级排在招聘 Agent 之后",
+        },
+        content: `---
+title: "内部知识库改版方案概要与调研"
+type: solution_brief
+date: "2026-09-10"
+progress: draft
+stakeholders:
+  - 张明
+  - 张哥
+version: "v0.1"
+expected_solution: "打通部门文档与代码知识，构建轻量检索 Agent"
+notes: "优先级排在招聘 Agent 之后"
+---
+
+# 内部知识库改版方案概要与调研
+
+## 1. 目标与方向
+构建部门级私有化知识库问答工具，减少新人入职问询成本。`,
+      },
+    ],
   },
 ];
 
@@ -328,6 +510,7 @@ const DEMO_MESSAGES: ChatMessage[] = [
 export const INITIAL_CONVERSATIONS: Conversation[] = [
   {
     id: "c-demo",
+    projectId: "recruiting",
     title: "王总问「为什么还没做完」",
     time: "14:31",
     group: "今天",
@@ -342,6 +525,7 @@ export const INITIAL_CONVERSATIONS: Conversation[] = [
   },
   {
     id: "c-li",
+    projectId: "recruiting",
     title: "和李总对接口排期",
     time: "3天前",
     group: "本周",
