@@ -263,7 +263,7 @@ export function AppShell() {
             )}
           </main>
 
-          <footer className="shrink-0 space-y-2.5 border-t border-rule bg-paper pb-1 pt-4">
+          <footer className="shrink-0 space-y-2 border-t border-rule bg-paper pb-1 pt-2.5">
             <Composer prefill={prefill} onSend={send} />
             <BottomNav active={navActive} />
           </footer>

@@ -29,13 +29,13 @@ export function Composer({
 
   return (
     <div className="mx-auto w-full max-w-[680px] px-6">
-      <div className="mb-1.5 flex items-baseline justify-between">
+      <div className="mb-1 flex items-baseline justify-between">
         <span className="kicker">写给旁白 · TO THE COACH</span>
-        <span className="hidden font-mono text-[10px] tracking-[0.1em] text-ink-mute sm:inline">
+        <span className="hidden font-mono text-[9.5px] tracking-[0.08em] text-ink-mute sm:inline">
           ⏎ 发送 · ⇧⏎ 换行
         </span>
       </div>
-      <div className="flex items-end gap-3 border border-rule bg-paper-warm px-5 py-4 transition-colors focus-within:border-ink/60">
+      <div className="flex items-end gap-3 border border-rule bg-paper-warm px-4 py-2.5 transition-colors focus-within:border-ink/60">
         <textarea
           ref={ref}
           value={text}
@@ -48,13 +48,13 @@ export function Composer({
           }}
           rows={1}
           placeholder="跟旁白说点什么，像写日记一样……"
-          className="max-h-40 min-h-[28px] flex-1 resize-none bg-transparent font-serif text-[16px] leading-[1.8] outline-none placeholder:text-ink-mute/70"
+          className="max-h-36 min-h-[26px] flex-1 resize-none bg-transparent font-serif text-[15.5px] leading-[1.7] outline-none placeholder:text-ink-mute/70"
         />
         <button
           type="button"
           onClick={submit}
           disabled={!text.trim()}
-          className="flex shrink-0 items-center gap-2 bg-ink px-4 py-2 font-serif text-[13.5px] text-paper transition-all hover:bg-accent disabled:cursor-not-allowed disabled:opacity-30"
+          className="flex shrink-0 items-center gap-1.5 bg-ink px-3.5 py-1.5 font-serif text-[13px] text-paper transition-all hover:bg-accent disabled:cursor-not-allowed disabled:opacity-30"
         >
           发送
           <CornerDownLeft className="size-3.5" strokeWidth={1.5} />

@@ -39,44 +39,39 @@ export function EmptyState() {
   ];
 
   return (
-    <div className="mx-auto flex h-full max-w-[620px] flex-col items-center justify-center px-6 py-10 text-center">
-      <div className="kicker">新的一篇 · NEW ENTRY</div>
-      <h1 className="mt-4 font-serif text-[34px] font-black leading-[1.35] tracking-[0.02em]">
-        今天，工作里
-        <br />
-        发生了什么？
-      </h1>
-      <p className="mt-4 max-w-[380px] font-serif text-[15px] leading-[1.9] text-ink-soft">
-        像给编辑写信一样——想到什么说什么，
-        线索交给旁白来整理。
-      </p>
-      <span
-        aria-hidden
-        className="mt-3 select-none font-display text-[44px] leading-none text-accent/30"
-      >
-        &rdquo;
-      </span>
+    <div className="mx-auto flex h-full max-w-[620px] flex-col justify-center px-6 py-4">
+      {/* 紧凑开篇引言 */}
+      <div className="text-center">
+        <div className="kicker">新的一篇 · NEW ENTRY</div>
+        <h1 className="mt-2 font-serif text-[24px] font-black leading-snug tracking-[0.02em] text-ink sm:text-[26px]">
+          今天，工作里发生了什么？
+        </h1>
+        <p className="mt-2 font-serif text-[13.5px] leading-relaxed text-ink-soft">
+          像给编辑写信一样——想到什么说什么，线索交给旁白来整理。
+        </p>
+      </div>
 
-      <div className="mt-8 grid w-full grid-cols-1 gap-3 sm:grid-cols-2">
+      {/* 4 个场景快捷卡片 */}
+      <div className="mt-5 grid w-full grid-cols-1 gap-2.5 sm:grid-cols-2">
         {suggestions.map(({ icon: Icon, title, sub, onClick }) => (
           <button
             key={title}
             type="button"
             onClick={onClick}
-            className="group flex items-start gap-3.5 border border-rule bg-paper px-5 py-4 text-left transition-colors hover:border-ink/40 hover:bg-paper-warm"
+            className="group flex items-start gap-3 border border-rule bg-paper px-4 py-3 text-left transition-all hover:border-ink/40 hover:bg-paper-warm"
           >
             <Icon
-              className="mt-0.5 size-[18px] shrink-0 text-ink-mute transition-colors group-hover:text-accent"
+              className="mt-0.5 size-4 shrink-0 text-ink-mute transition-colors group-hover:text-accent"
               strokeWidth={1.5}
             />
-            <span>
-              <span className="block font-serif text-[14.5px] font-semibold">
+            <div className="min-w-0">
+              <span className="block truncate font-serif text-[13.5px] font-semibold text-ink">
                 {title}
               </span>
-              <span className="mt-0.5 block text-[12px] leading-relaxed text-ink-mute">
+              <span className="mt-0.5 block truncate text-[11.5px] text-ink-mute">
                 {sub}
               </span>
-            </span>
+            </div>
           </button>
         ))}
       </div>
