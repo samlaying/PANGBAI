@@ -296,6 +296,18 @@ export function AppShell() {
           };
         }),
       );
+
+      // 真实落入 SQLite 数据库世界模型
+      fetch(`/api/people/${data.personId}/memory/confirm`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          observation: data.observation,
+          inferredPattern: data.pattern,
+          confidence: data.confidence,
+          source: data.scene || "当前项目协同对话",
+        }),
+      }).catch((err) => console.warn("Failed to persist memory to SQLite:", err));
     },
     [activeProject?.name],
   );
@@ -308,11 +320,96 @@ export function AppShell() {
     [],
   );
 
+  /* 从真实后端 SQLite 加载初始世界模型 (People / Projects) */
+  useEffect(() => {
+    fetch("/api/people")
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) {
+          setPeople((prev) =>
+            data.map((p) => {
+              const prevPerson = prev.find((item) => item.id === p.id);
+              return {
+                id: p.id,
+                name: p.name,
+                char: p.name ? p.name.slice(0, 1) : "人",
+                role: p.role,
+                org: p.department || prevPerson?.org || "产品研发部",
+                relationChip: p.relationshipTone || prevPerson?.relationChip || "协同",
+                tension: p.tensionScore ?? prevPerson?.tension ?? 50,
+                patterns: (p.models || []).map((m: { pattern: string; confidence: number; evidenceCount: number; lastObservedAt: string }) => ({
+                  pattern: m.pattern,
+                  confidence: m.confidence,
+                  evidenceCount: m.evidenceCount,
+                  lastObserved: m.lastObservedAt || "近期",
+                })),
+                recent: prevPerson?.recent || [],
+                advice: p.advice || prevPerson?.advice || "",
+                evidence: (p.evidence || []).map((e: { id: string; date: string; source: string; text: string }) => ({
+                  id: e.id,
+                  date: e.date,
+                  scene: e.source,
+                  source: e.source,
+                  person: p.name,
+                  project: "当前项目",
+                  record: e.text,
+                  observation: e.text,
+                  pattern: p.models?.[0]?.pattern || "职场行为模式",
+                  patternConfidence: p.models?.[0]?.confidence || 85,
+                })),
+              };
+            })
+          );
+        }
+      })
+      .catch((err) => console.warn("Failed to load people from SQLite, fallback to local:", err));
+
+    fetch("/api/projects")
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) {
+          setProjects((prev) =>
+            data.map((p) => {
+              const prevProj = prev.find((item) => item.id === p.id);
+              const mappedRisks = (p.risks || prevProj?.risks || []).map((r: { title: string; note: string; syncTarget?: string; owner?: string }) => ({
+                title: r.title,
+                note: r.note,
+                owner: r.syncTarget || r.owner || "张明",
+              }));
+              const mappedMilestones = (p.milestones || prevProj?.milestones || []).map((m: { name: string; date: string; done?: boolean; isRisk?: boolean; state?: "done" | "warn" | "todo" }) => ({
+                name: m.name,
+                date: m.date,
+                state: (m.done ? "done" : m.isRisk ? "warn" : (m.state || "todo")) as "done" | "warn" | "todo",
+              }));
+              const mappedMembers = (p.stakeholders || []).map((s: { id?: string } | string) => (typeof s === "object" ? s.id || "" : s)).filter(Boolean);
+
+              return {
+                id: p.id,
+                name: p.name,
+                status: p.status,
+                progress: p.progress,
+                deadline: p.deadline || "1月31日",
+                riskCount: mappedRisks.length,
+                risks: mappedRisks,
+                milestones: mappedMilestones,
+                members: mappedMembers.length > 0 ? mappedMembers : prevProj?.members || ["wang", "li"],
+                advice: p.advice || prevProj?.advice || "",
+                artifacts: prevProj?.artifacts || [],
+              };
+            })
+          );
+        }
+      })
+      .catch((err) => console.warn("Failed to load projects from SQLite, fallback to local:", err));
+
+  }, []);
+
   /* 主动提醒：6 秒后安静浮出 */
   useEffect(() => {
     const t = setTimeout(() => setProactive(true), 6000);
     return () => clearTimeout(t);
   }, []);
+
 
   /* 对话自动滚到底 */
   useEffect(() => {

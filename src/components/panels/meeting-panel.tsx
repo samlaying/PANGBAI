@@ -96,7 +96,7 @@ export function MeetingPanel() {
           {MEETING.attendees.map(({ personId }) => {
             const p = personById(personId);
             if (!p) return null;
-            const top = p.patterns[0];
+            const top = p.patterns?.[0];
             return (
               <button
                 key={personId}
@@ -107,14 +107,19 @@ export function MeetingPanel() {
                 <Avatar char={p.char} size="sm" />
                 <span className="flex-1 truncate font-serif text-[13.5px]">
                   {p.name}
-                  <span className="text-ink-mute"> · {top.pattern}</span>
+                  {top && <span className="text-ink-mute"> · {top.pattern}</span>}
                 </span>
-                <DotMeter value={top.confidence} />
-                <span className="font-mono text-[10px] text-ink-mute">
-                  {top.confidence}%
-                </span>
+                {top && (
+                  <>
+                    <DotMeter value={top.confidence} />
+                    <span className="font-mono text-[10px] text-ink-mute">
+                      {top.confidence}%
+                    </span>
+                  </>
+                )}
               </button>
             );
+
           })}
           <p className="text-center font-mono text-[9.5px] tracking-[0.12em] text-ink-mute">
             点击头像可查看详细画像 ↗

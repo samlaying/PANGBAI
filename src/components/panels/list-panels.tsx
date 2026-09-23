@@ -35,8 +35,11 @@ export function PeoplePanel({ people = PEOPLE }: { people?: Person[] } = {}) {
                     </span>
                   </span>
                   <span className="mt-0.5 block truncate font-serif text-[13px] text-ink-soft">
-                    {p.patterns[0].pattern} · {p.patterns[0].confidence}%
+                    {p.patterns?.[0]
+                      ? `${p.patterns[0].pattern} · ${p.patterns[0].confidence}%`
+                      : "正在持续观察行为模式中..."}
                   </span>
+
                 </span>
                 <ChevronRight
                   className="size-4 shrink-0 text-ink-mute transition-transform group-hover:translate-x-0.5 group-hover:text-ink"
