@@ -2,19 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Block, ChatMessage, Conversation, Person, Project } from "@/lib/types";
-import {
-  CANNED_REPLIES,
-  INITIAL_CONVERSATIONS,
-  PEOPLE,
-  PROJECTS,
-  personById,
-  projectById,
-} from "@/lib/mock-data";
+import { mapArtifact, mapPerson, mapProject } from "@/lib/records";
 import { Masthead } from "./masthead";
 import { Sidebar } from "./sidebar";
 import { BottomNav, type NavKey } from "./bottom-nav";
 import { Composer } from "./composer";
-import { ChatFlow, type RehearsalScenario } from "./chat/chat-flow";
+import { ChatFlow } from "./chat/chat-flow";
 import { EmptyState } from "./chat/empty-state";
 import { MdCanvas, type CanvasDoc } from "./canvas/md-canvas";
 import { SidePanelShell } from "./panels/side-panel";
@@ -26,37 +19,9 @@ import { SettingsPanel } from "./panels/settings-panel";
 import { EvidenceModal } from "./modals/evidence-modal";
 import { GrowthModal } from "./modals/growth-modal";
 import { CommandMenu } from "./overlays/command-menu";
-import { ProactiveCard } from "./overlays/proactive-card";
 import { UIContext, type UIActions } from "./ui-context";
 
-const DEFAULT_PRD_CONTENT = `---
-title: "招聘 Agent v2 核心方案与排期备忘"
-type: "prd"
-date: "2026-09-23"
-progress: "draft"
-stakeholders: ["王总", "李总", "张明"]
-version: "v2.0-draft"
-expected_solution: "落地「简历结构化解析 + 关键胜任力打分」，次要字段规则兜底，确保周四向王总与客户顺利演示"
-risk_points: ["数据标注延期3天", "跨部门接口联调环境不稳定"]
-notes: "本周四向王总与客户演示初版，重点把控交付确定性"
----
 
-# 招聘 Agent v2 核心方案与排期备忘
-
-## 1. 业务背景与预期做成什么方案
-- **目标**：将初筛效率提升 40%，周四需向王总与客户演示初版。
-- **现状卡点**：数据标注由于样本复杂性延期 3 天，当前综合进度 65%。
-
-## 2. 方案与取舍（Trade-off）
-- **方案 A（保期交付核心链路 · 推荐）**：
-  优先打通「简历解析 + 核心能力打分」，次要字段暂用规则兜底。可保证周四如期向客户演示。
-- **方案 B（全量精准交付）**：
-  等待全部标注完毕再行评估，交付整体延后至下周二。
-
-## 3. 向上沟通与跨部门协同
-- 需在今晚下班前向王总主动同步，避免评审会上被动质询。
-- 与李总对齐接口技术取舍，争取后端去重中间件支持。
-`;
 
 function parseMarkdownToBlocks(
   content: string,
@@ -178,29 +143,26 @@ const newConversation = (projectId?: string): Conversation => ({
   projectId,
 });
 
+const INITIAL_CONVERSATION = newConversation();
+
 export function AppShell() {
   const [panel, setPanel] = useState<PanelState>(null);
   const [modal, setModal] = useState<ModalState>(null);
   const [commandOpen, setCommandOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
-  const [rehearsal, setRehearsal] = useState(false);
-  const [rehearsalScenario, setRehearsalScenario] =
-    useState<RehearsalScenario | null>(null);
-  const [proactive, setProactive] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [activeCanvas, setActiveCanvas] = useState<CanvasDoc | null>(null);
 
   const [conversations, setConversations] =
-    useState<Conversation[]>(INITIAL_CONVERSATIONS);
-  const [activeConvId, setActiveConvId] = useState(INITIAL_CONVERSATIONS[0].id);
-  const [projects, setProjects] = useState<Project[]>(PROJECTS);
-  const [people, setPeople] = useState<Person[]>(PEOPLE);
+    useState<Conversation[]>([INITIAL_CONVERSATION]);
+  const [activeConvId, setActiveConvId] = useState(INITIAL_CONVERSATION.id);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [people, setPeople] = useState<Person[]>([]);
   const [projectCreateSignal, setProjectCreateSignal] = useState(0);
 
   const [typing, setTyping] = useState(false);
   const [prefill, setPrefill] = useState({ text: "", n: 0 });
   const scrollRef = useRef<HTMLDivElement>(null);
-  const cannedIdx = useRef(0);
 
   const activeConv =
     conversations.find((c) => c.id === activeConvId) ?? conversations[0];
@@ -222,192 +184,72 @@ export function AppShell() {
   );
 
   /* 检查并唤出 Canvas */
-  const openDefaultCanvas = useCallback((title = "招聘 Agent v2 PRD 核心方案.md") => {
-    setActiveCanvas({
-      id: "prd-recruiting",
-      title,
-      content: DEFAULT_PRD_CONTENT,
-      updatedAt: "刚刚",
-    });
+  const openDefaultCanvas = useCallback((title = "未命名文档.md") => {
+    setActiveCanvas({ id: crypto.randomUUID(), title, content: `# ${title}\n`, updatedAt: "刚刚" });
   }, []);
 
-  /* 载入具体内容并直接在右侧打开 Canvas 工作区 */
-  const loadCanvasDoc = useCallback((title: string, content: string) => {
-    setActiveCanvas({
-      id: `doc-${Date.now()}`,
-      title,
-      content,
-      updatedAt: "刚刚",
+  const loadCanvasDoc = useCallback(async (title: string, content: string) => {
+    const projectId = activeProject?.id;
+    if (!projectId) {
+      setActiveCanvas({ id: crypto.randomUUID(), title, content, updatedAt: "刚刚" });
+      return;
+    }
+    const response = await fetch("/api/artifacts", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId, title, content }),
     });
-  }, []);
+    if (!response.ok) throw new Error("文档创建失败");
+    const artifact = mapArtifact(await response.json());
+    setProjects((prev) => prev.map((project) => project.id === projectId
+      ? { ...project, artifacts: [...(project.artifacts || []), artifact] } : project));
+    setActiveCanvas({ id: artifact.id, title: artifact.title, content: artifact.content, updatedAt: artifact.updatedAt });
+  }, [activeProject?.id]);
+
+  const saveCanvasDoc = useCallback(async () => {
+    if (!activeCanvas || !activeProject) throw new Error("请先选择项目");
+    const exists = activeProject.artifacts?.some((art) => art.id === activeCanvas.id);
+    const response = await fetch(exists ? `/api/artifacts/${encodeURIComponent(activeCanvas.id)}` : "/api/artifacts", {
+      method: exists ? "PUT" : "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId: activeProject.id, title: activeCanvas.title, content: activeCanvas.content }),
+    });
+    if (!response.ok) throw new Error("文档保存失败");
+    const payload = await response.json();
+    const id = exists ? activeCanvas.id : payload.id;
+    const artifact = mapArtifact({ ...payload, id, projectId: activeProject.id,
+      title: payload.title || activeCanvas.title, content: activeCanvas.content, updatedAt: "刚刚" });
+    setProjects((prev) => prev.map((project) => project.id === activeProject.id
+      ? { ...project, artifacts: exists
+        ? (project.artifacts || []).map((art) => art.id === id ? artifact : art)
+        : [...(project.artifacts || []), artifact] } : project));
+    setActiveCanvas((prev) => prev ? { ...prev, id } : prev);
+  }, [activeCanvas, activeProject]);
 
   /* 确认把 AI 提前提炼的记忆沉淀到世界模型中 */
-  const confirmMemory = useCallback(
-    (data: {
-      personId: string;
-      pattern: string;
-      observation: string;
-      confidence: number;
-      scene?: string;
-    }) => {
-      setPeople((prev) =>
-        prev.map((person) => {
-          if (person.id !== data.personId) return person;
-          const existingIdx = person.patterns.findIndex(
-            (p) => p.pattern === data.pattern,
-          );
-          let updatedPatterns = [...person.patterns];
-          if (existingIdx >= 0) {
-            updatedPatterns[existingIdx] = {
-              ...updatedPatterns[existingIdx],
-              confidence: Math.max(
-                updatedPatterns[existingIdx].confidence,
-                data.confidence,
-              ),
-              evidenceCount: updatedPatterns[existingIdx].evidenceCount + 1,
-              lastObserved: "刚刚",
-            };
-          } else {
-            updatedPatterns.unshift({
-              pattern: data.pattern,
-              confidence: data.confidence,
-              evidenceCount: 1,
-              lastObserved: "刚刚",
-            });
-          }
-
-          const newEvidenceItem = {
-            id: `ev-confirmed-${Date.now()}`,
-            date: "刚刚",
-            scene: data.scene || "当前项目协同对话",
-            source: "对话沉淀",
-            person: person.name,
-            project: activeProject?.name || "当前项目",
-            record: `用户确认了 AI 针对 ${person.name} 提炼的行为模式：「${data.pattern}」`,
-            observation: data.observation,
-            pattern: data.pattern,
-            patternConfidence: data.confidence,
-          };
-
-          return {
-            ...person,
-            patterns: updatedPatterns,
-            evidence: [newEvidenceItem, ...person.evidence],
-          };
-        }),
-      );
-
-      // 真实落入 SQLite 数据库世界模型
-      fetch(`/api/people/${data.personId}/memory/confirm`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          observation: data.observation,
-          inferredPattern: data.pattern,
-          confidence: data.confidence,
-          source: data.scene || "当前项目协同对话",
-        }),
-      }).catch((err) => console.warn("Failed to persist memory to SQLite:", err));
-    },
-    [activeProject?.name],
-  );
-
-  const startRehearsalWithScenario = useCallback(
-    (scenario: RehearsalScenario) => {
-      setRehearsalScenario(scenario);
-      setRehearsal(true);
-    },
-    [],
-  );
-
-  /* 从真实后端 SQLite 加载初始世界模型 (People / Projects) */
-  useEffect(() => {
-    fetch("/api/people")
-      .then((res) => res.json())
-      .then((data) => {
-        if (Array.isArray(data) && data.length > 0) {
-          setPeople((prev) =>
-            data.map((p) => {
-              const prevPerson = prev.find((item) => item.id === p.id);
-              return {
-                id: p.id,
-                name: p.name,
-                char: p.name ? p.name.slice(0, 1) : "人",
-                role: p.role,
-                org: p.department || prevPerson?.org || "产品研发部",
-                relationChip: p.relationshipTone || prevPerson?.relationChip || "协同",
-                tension: p.tensionScore ?? prevPerson?.tension ?? 50,
-                patterns: (p.models || []).map((m: { pattern: string; confidence: number; evidenceCount: number; lastObservedAt: string }) => ({
-                  pattern: m.pattern,
-                  confidence: m.confidence,
-                  evidenceCount: m.evidenceCount,
-                  lastObserved: m.lastObservedAt || "近期",
-                })),
-                recent: prevPerson?.recent || [],
-                advice: p.advice || prevPerson?.advice || "",
-                evidence: (p.evidence || []).map((e: { id: string; date: string; source: string; text: string }) => ({
-                  id: e.id,
-                  date: e.date,
-                  scene: e.source,
-                  source: e.source,
-                  person: p.name,
-                  project: "当前项目",
-                  record: e.text,
-                  observation: e.text,
-                  pattern: p.models?.[0]?.pattern || "职场行为模式",
-                  patternConfidence: p.models?.[0]?.confidence || 85,
-                })),
-              };
-            })
-          );
-        }
-      })
-      .catch((err) => console.warn("Failed to load people from SQLite, fallback to local:", err));
-
-    fetch("/api/projects")
-      .then((res) => res.json())
-      .then((data) => {
-        if (Array.isArray(data) && data.length > 0) {
-          setProjects((prev) =>
-            data.map((p) => {
-              const prevProj = prev.find((item) => item.id === p.id);
-              const mappedRisks = (p.risks || prevProj?.risks || []).map((r: { title: string; note: string; syncTarget?: string; owner?: string }) => ({
-                title: r.title,
-                note: r.note,
-                owner: r.syncTarget || r.owner || "张明",
-              }));
-              const mappedMilestones = (p.milestones || prevProj?.milestones || []).map((m: { name: string; date: string; done?: boolean; isRisk?: boolean; state?: "done" | "warn" | "todo" }) => ({
-                name: m.name,
-                date: m.date,
-                state: (m.done ? "done" : m.isRisk ? "warn" : (m.state || "todo")) as "done" | "warn" | "todo",
-              }));
-              const mappedMembers = (p.stakeholders || []).map((s: { id?: string } | string) => (typeof s === "object" ? s.id || "" : s)).filter(Boolean);
-
-              return {
-                id: p.id,
-                name: p.name,
-                status: p.status,
-                progress: p.progress,
-                deadline: p.deadline || "1月31日",
-                riskCount: mappedRisks.length,
-                risks: mappedRisks,
-                milestones: mappedMilestones,
-                members: mappedMembers.length > 0 ? mappedMembers : prevProj?.members || ["wang", "li"],
-                advice: p.advice || prevProj?.advice || "",
-                artifacts: prevProj?.artifacts || [],
-              };
-            })
-          );
-        }
-      })
-      .catch((err) => console.warn("Failed to load projects from SQLite, fallback to local:", err));
-
+  const confirmMemory = useCallback(async (data: {
+    personId: string; candidateId?: string; pattern: string; observation: string; confidence: number; scene?: string;
+  }) => {
+    const response = await fetch(`/api/people/${encodeURIComponent(data.personId)}/memory/confirm`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ candidateId: data.candidateId, observation: data.observation,
+        inferredPattern: data.pattern, confidence: data.confidence, source: data.scene }),
+    });
+    if (!response.ok) throw new Error("记忆保存失败");
+    const result = await response.json();
+    const person = mapPerson(result.person);
+    setPeople((prev) => prev.map((p) => p.id === person.id ? person : p));
   }, []);
 
-  /* 主动提醒：6 秒后安静浮出 */
   useEffect(() => {
-    const t = setTimeout(() => setProactive(true), 6000);
-    return () => clearTimeout(t);
+    const load = async () => {
+      try {
+        const [peopleResponse, projectsResponse] = await Promise.all([fetch("/api/people"), fetch("/api/projects")]);
+        if (!peopleResponse.ok || !projectsResponse.ok) throw new Error("资料加载失败");
+        const [peopleData, projectsData] = await Promise.all([peopleResponse.json(), projectsResponse.json()]);
+        setPeople(Array.isArray(peopleData) ? peopleData.map(mapPerson) : []);
+        setProjects(Array.isArray(projectsData) ? projectsData.map(mapProject) : []);
+      } catch (error) { console.error("Failed to load workspace:", error); }
+    };
+    void load();
   }, []);
 
 
@@ -415,7 +257,7 @@ export function AppShell() {
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-  }, [activeConv?.messages.length, typing, rehearsal, activeConvId]);
+  }, [activeConv?.messages.length, typing, activeConvId]);
 
   /* 全局键盘：⌘K 与 Esc 分层关闭 */
   useEffect(() => {
@@ -512,6 +354,7 @@ export function AppShell() {
             activeCanvas: activeCanvas
               ? { title: activeCanvas.title, content: activeCanvas.content }
               : undefined,
+            projectId: currentProject?.id,
             activeProject: currentProject
               ? {
                   id: currentProject.id,
@@ -555,12 +398,7 @@ export function AppShell() {
           if (done) break;
           const chunk = decoder.decode(value, { stream: true });
           streamAccumulator += chunk;
-          const parsedBlocks = parseMarkdownToBlocks(
-            streamAccumulator,
-            (title, docContent) => {
-              loadCanvasDoc(title, docContent);
-            },
-          );
+          const parsedBlocks = parseMarkdownToBlocks(streamAccumulator);
 
           patchConversation(convId, (c) => ({
             ...c,
@@ -572,26 +410,14 @@ export function AppShell() {
 
         setTyping(false);
       } catch (err) {
-        console.warn("API fallback to canned reply:", err);
+        console.error("Chat request failed:", err);
         setTyping(false);
-        let replyIndex = cannedIdx.current % CANNED_REPLIES.length;
-        if (isDocIntent) {
-          replyIndex = 0; // PRD 骨架 & 记忆预提炼确认卡
-          openDefaultCanvas();
-        }
-        const reply = CANNED_REPLIES[replyIndex];
-        cannedIdx.current += 1;
         patchConversation(convId, (c) => ({
           ...c,
-          messages: [
-            ...c.messages.filter((m) => m.id !== assistantMsgId),
-            {
-              id: nextId(),
-              role: "assistant",
-              time: "刚刚",
-              blocks: reply.blocks,
-            } as ChatMessage,
-          ],
+          messages: [...c.messages.filter((m) => m.id !== assistantMsgId), {
+            id: nextId(), role: "assistant", time: "刚刚",
+            blocks: [{ kind: "para", text: "请求失败，请检查服务配置后重试。" }],
+          } as ChatMessage],
         }));
       }
     },
@@ -601,18 +427,18 @@ export function AppShell() {
       conversations,
       projects,
       openDefaultCanvas,
-      loadCanvasDoc,
       patchConversation,
     ],
   );
 
   const selectConversation = useCallback((id: string) => {
     setActiveConvId(id);
-    setRehearsal(false);
+    setActiveCanvas(null);
   }, []);
 
   const openProjectWorkspace = useCallback(
     (projectId: string) => {
+      setActiveCanvas(null);
       // 查找该项目已有会话，或新建该项目专属会话
       const existing = conversations.find((c) => c.projectId === projectId);
       if (existing) {
@@ -624,7 +450,6 @@ export function AppShell() {
         setConversations((cs) => [conv, ...cs]);
         setActiveConvId(conv.id);
       }
-      setRehearsal(false);
       setPanel(null);
     },
     [conversations, projects]
@@ -632,13 +457,12 @@ export function AppShell() {
 
   const startNewConversation = useCallback(() => {
     // 继承当前项目（若处于某个项目会话中），并提供幂等保护
-    const targetProjectId = activeConv?.projectId;
+    const targetProjectId = activeConv.projectId;
     const emptyConv = conversations.find(
       (c) => c.messages.length === 0 && c.projectId === targetProjectId
     );
     if (emptyConv) {
       setActiveConvId(emptyConv.id);
-      setRehearsal(false);
       return;
     }
 
@@ -649,8 +473,7 @@ export function AppShell() {
     if (proj) conv.title = `${proj.name} · 会话`;
     setConversations((cs) => [conv, ...cs]);
     setActiveConvId(conv.id);
-    setRehearsal(false);
-  }, [conversations, activeConv?.projectId, projects]);
+  }, [conversations, activeConv.projectId, projects]);
 
   const deleteConversation = useCallback(
     (id: string) => {
@@ -673,6 +496,7 @@ export function AppShell() {
     openPerson: (id) => setPanel({ type: "person", id }),
     openProject: (id) => setPanel({ type: "project", id }),
     openProjectDocs: (projectId) => {
+      openProjectWorkspace(projectId);
       const p = projects.find((x) => x.id === projectId);
       if (p?.artifacts?.[0]) {
         openArtifactInCanvas(p.artifacts[0]);
@@ -688,12 +512,7 @@ export function AppShell() {
     openSettings: () => setPanel({ type: "settings" }),
     closePanel: () => setPanel(null),
     ask,
-    startRehearsal: () => {
-      setModal(null);
-      setRehearsalScenario(null);
-      setRehearsal(true);
-    },
-    startRehearsalWithScenario,
+    startRehearsal: () => ask("请根据当前对话扮演沟通对象，与我进行一轮真实的职场沟通演练。先提出一个具体问题，等我回答后再追问，并在结束时给出针对性的反馈。"),
     createProject,
     loadCanvasDoc,
     confirmMemory,
@@ -770,12 +589,6 @@ export function AppShell() {
                   opener={activeConv.opener}
                   messages={messages}
                   typing={typing}
-                  rehearsal={rehearsal}
-                  rehearsalScenario={rehearsalScenario}
-                  onExitRehearsal={() => {
-                    setRehearsal(false);
-                    setRehearsalScenario(null);
-                  }}
                 />
               )}
             </div>
@@ -783,7 +596,9 @@ export function AppShell() {
             {/* 按需唤出的 Markdown Canvas 画布 */}
             {activeCanvas && (
               <MdCanvas
+                key={activeCanvas.id}
                 doc={activeCanvas}
+                onSave={saveCanvasDoc}
                 artifacts={activeProject?.artifacts}
                 onSelectArtifact={openArtifactInCanvas}
                 onNewArtifact={() => {
@@ -795,19 +610,6 @@ export function AppShell() {
                   setActiveCanvas((prev) =>
                     prev ? { ...prev, content, updatedAt: "刚刚" } : null,
                   );
-                  // 同步更新到所属项目 artifacts
-                  if (activeCanvas?.id) {
-                    setProjects((prev) =>
-                      prev.map((p) => ({
-                        ...p,
-                        artifacts: p.artifacts?.map((art) =>
-                          art.id === activeCanvas.id
-                            ? { ...art, content, updatedAt: "刚刚" }
-                            : art,
-                        ),
-                      })),
-                    );
-                  }
                 }}
                 onClose={() => setActiveCanvas(null)}
                 onAskAI={ask}
@@ -816,38 +618,42 @@ export function AppShell() {
           </main>
 
           <footer className="shrink-0 space-y-2 border-t border-rule bg-paper pb-1 pt-2.5">
-            <Composer prefill={prefill} onSend={send} />
+            <Composer key={prefill.n} prefill={prefill} onSend={send} />
             <BottomNav active={navActive} />
           </footer>
         </div>
       </div>
 
-      {/* Layer 0 · 主动提醒 */}
-      {proactive && <ProactiveCard onClose={() => setProactive(false)} />}
-
       {/* Layer 2 · 侧滑面板 */}
       {panel && (
         <SidePanelShell onClose={() => setPanel(null)}>
           <div key={JSON.stringify(panel)} className="anim-fade flex h-full flex-col">
-            {panel.type === "person" && (
+            {panel.type === "person" && people.find((p) => p.id === panel.id) && (
               <PersonPanel
-                person={
-                  people.find((p) => p.id === panel.id) ||
-                  personById(panel.id)!
-                }
+                person={people.find((p) => p.id === panel.id)!}
               />
             )}
-            {panel.type === "people" && <PeoplePanel people={people} />}
-            {panel.type === "project" && projectById(panel.id, projects) && (
-              <ProjectPanel project={projectById(panel.id, projects)!} />
+            {panel.type === "people" && <PeoplePanel people={people} onCreated={async (name, role) => {
+              const response = await fetch("/api/people", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, role }) });
+              if (!response.ok) throw new Error("创建人物失败");
+              const person = mapPerson(await response.json());
+              setPeople((prev) => [...prev, person]);
+            }} />}
+            {panel.type === "project" && projects.find((p) => p.id === panel.id) && (
+              <ProjectPanel project={projects.find((p) => p.id === panel.id)!} people={people} />
             )}
             {panel.type === "projects" && (
               <ProjectsPanel
+                key={projectCreateSignal}
                 projects={projects}
                 createSignal={projectCreateSignal}
-                onCreated={(p) => {
-                  setProjects((ps) => [p, ...ps]);
-                  setPanel({ type: "project", id: p.id });
+                onCreated={async (name, deadline) => {
+                  const response = await fetch("/api/projects", { method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ name, deadline }) });
+                  if (!response.ok) throw new Error("创建失败");
+                  const project = mapProject(await response.json());
+                  setProjects((ps) => [project, ...ps]);
+                  setPanel({ type: "project", id: project.id });
                 }}
               />
             )}
@@ -861,8 +667,7 @@ export function AppShell() {
       {modal?.type === "evidence" && (
         <EvidenceModal
           evidence={
-            (personById("wang")!.evidence.find((e) => e.id === modal.id) ??
-              personById("wang")!.evidence[0])
+            people.flatMap((p) => p.evidence).find((e) => e.id === modal.id)!
           }
           onClose={() => setModal(null)}
         />
@@ -872,7 +677,7 @@ export function AppShell() {
       )}
 
       {/* Layer 0 · ⌘K 检索 */}
-      {commandOpen && <CommandMenu onClose={() => setCommandOpen(false)} />}
+      {commandOpen && <CommandMenu onClose={() => setCommandOpen(false)} people={people} projects={projects} />}
     </UIContext.Provider>
   );
 }

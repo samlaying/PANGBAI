@@ -10,15 +10,12 @@ export function Composer({
   prefill: { text: string; n: number };
   onSend: (text: string) => void;
 }) {
-  const [text, setText] = useState("");
+  const [text, setText] = useState(prefill.text);
   const ref = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    if (prefill.text) {
-      setText(prefill.text);
-      ref.current?.focus();
-    }
-  }, [prefill]);
+    if (prefill.text) ref.current?.focus();
+  }, [prefill.text]);
 
   const submit = () => {
     const t = text.trim();

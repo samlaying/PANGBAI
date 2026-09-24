@@ -3,7 +3,6 @@
 import {
   FolderOpen,
   PanelLeftClose,
-  PanelLeftOpen,
   Plus,
   Search,
   SquarePen,

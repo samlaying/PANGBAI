@@ -8,7 +8,7 @@ import {
   Search,
   User,
 } from "lucide-react";
-import { SEARCH_ASKS, SEARCH_SOURCE } from "@/lib/mock-data";
+import type { Person, Project } from "@/lib/types";
 import { useUI } from "../ui-context";
 
 interface FlatItem {
@@ -19,24 +19,17 @@ interface FlatItem {
   key: string;
 }
 
-export function CommandMenu({ onClose }: { onClose: () => void }) {
+export function CommandMenu({ onClose, people, projects }: { onClose: () => void; people: Person[]; projects: Project[] }) {
   const ui = useUI();
   const [query, setQuery] = useState("");
   const [index, setIndex] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
 
   const items = useMemo<FlatItem[]>(() => {
-    const flat: FlatItem[] = SEARCH_SOURCE.flatMap((g) =>
-      g.items.map((it) => ({ group: g.group, ...it })),
-    );
-    const ask: FlatItem[] = SEARCH_ASKS.map((q) => ({
-      group: "问旁白",
-      title: q,
-      sub: "直接在对话里问",
-      meta: "ASK",
-      key: `ask:${q}`,
-    }));
-    const all = [...flat, ...ask];
+    const all: FlatItem[] = [
+      ...people.map((person) => ({ group: "人物", title: person.name, sub: person.role, meta: "PERSON", key: `person:${person.id}` })),
+      ...projects.map((project) => ({ group: "项目", title: project.name, sub: project.status, meta: "PROJECT", key: `project:${project.id}` })),
+    ];
     const q = query.trim().toLowerCase();
     if (!q) return all;
     return all.filter(
@@ -45,9 +38,7 @@ export function CommandMenu({ onClose }: { onClose: () => void }) {
         it.sub.toLowerCase().includes(q) ||
         it.group.includes(q),
     );
-  }, [query]);
-
-  useEffect(() => setIndex(0), [query]);
+  }, [query, people, projects]);
 
   useEffect(() => {
     listRef.current
@@ -103,7 +94,7 @@ export function CommandMenu({ onClose }: { onClose: () => void }) {
           <input
             autoFocus
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => { setQuery(e.target.value); setIndex(0); }}
             onKeyDown={onKeyDown}
             placeholder="检索人物、项目、会议、记忆…"
             className="flex-1 bg-transparent font-serif text-[17px] outline-none placeholder:text-ink-mute/70"

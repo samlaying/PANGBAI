@@ -1,4 +1,4 @@
-/* ── 世界模型（前端演示用 mock 结构，与 guide.md 数据库设计对应） ── */
+/* ── 世界模型视图类型 ── */
 
 export interface PersonPattern {
   pattern: string;
@@ -172,7 +172,7 @@ export interface Conversation {
   group: "今天" | "本周" | "更早";
   opener?: ConversationOpener;
   messages: ChatMessage[];
-  projectId?: string; // 关联所属项目（如 "recruiting"）
+  projectId?: string; // 关联所属项目
 }
 
 /* ── 成长 ── */

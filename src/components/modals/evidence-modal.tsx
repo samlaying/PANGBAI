@@ -60,7 +60,7 @@ export function EvidenceModal({
         <p className="mt-4 font-serif text-[15px] leading-[1.95] text-ink-soft">
           {evidence.observation}
         </p>
-        <div className="mt-4 inline-flex items-center gap-2 border border-accent/50 px-3 py-1.5">
+        {evidence.pattern && <div className="mt-4 inline-flex items-center gap-2 border border-accent/50 px-3 py-1.5">
           <span className="font-mono text-[10px] text-accent">▸</span>
           <span className="font-serif text-[13px]">
             支撑画像：{evidence.pattern}
@@ -68,7 +68,7 @@ export function EvidenceModal({
           <span className="font-mono text-[11px] text-accent">
             {evidence.patternConfidence}%
           </span>
-        </div>
+        </div>}
       </section>
 
       <div className="mt-8">

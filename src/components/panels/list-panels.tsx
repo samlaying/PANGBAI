@@ -1,15 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { ChevronRight, Plus } from "lucide-react";
 import type { Person, Project } from "@/lib/types";
-import { PEOPLE } from "@/lib/mock-data";
 import { useUI } from "../ui-context";
 import { Avatar, SolidButton, GhostButton } from "../atoms";
 import { PanelBody, PanelHeader } from "./side-panel";
 
-export function PeoplePanel({ people = PEOPLE }: { people?: Person[] } = {}) {
+export function PeoplePanel({ people, onCreated }: { people: Person[]; onCreated: (name: string, role: string) => Promise<void> }) {
   const ui = useUI();
+  const [name, setName] = useState("");
+  const [role, setRole] = useState("");
+  const [error, setError] = useState("");
   return (
     <>
       <PanelHeader kicker="人物索引 · PEOPLE INDEX">
@@ -18,6 +20,17 @@ export function PeoplePanel({ people = PEOPLE }: { people?: Person[] } = {}) {
         </h2>
       </PanelHeader>
       <PanelBody>
+        <form onSubmit={async (event) => {
+          event.preventDefault();
+          try { await onCreated(name.trim(), role.trim()); setName(""); setRole(""); setError(""); }
+          catch { setError("创建人物失败，请重试"); }
+        }} className="mb-5 flex flex-wrap gap-2">
+          <input aria-label="姓名" required value={name} onChange={(event) => setName(event.target.value)} placeholder="姓名" className="min-w-0 flex-1 border border-rule bg-paper px-2 py-1" />
+          <input aria-label="角色" required value={role} onChange={(event) => setRole(event.target.value)} placeholder="角色" className="min-w-0 flex-1 border border-rule bg-paper px-2 py-1" />
+          <button type="submit" className="border border-accent px-3 py-1 text-accent">添加人物</button>
+        </form>
+        {error && <p role="alert" className="text-vermilion">{error}</p>}
+        {people.length === 0 && <p className="py-5 text-center text-ink-mute">暂无人物档案</p>}
         <ul>
           {people.map((p) => (
             <li key={p.id} className="border-b border-rule last:border-0">
@@ -64,36 +77,24 @@ export function ProjectsPanel({
 }: {
   projects: Project[];
   createSignal: number;
-  onCreated: (p: Project) => void;
+  onCreated: (name: string, deadline: string) => Promise<void>;
 }) {
   const ui = useUI();
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreating] = useState(createSignal > 0);
   const [name, setName] = useState("");
   const [deadline, setDeadline] = useState("");
+  const [error, setError] = useState("");
 
-  useEffect(() => {
-    if (createSignal > 0) setCreating(true);
-  }, [createSignal]);
-
-  const submit = () => {
+  const submit = async () => {
     const trimmed = name.trim();
     if (!trimmed) return;
-    onCreated({
-      id: `p-${trimmed}-${projects.length + 1}`,
-      name: trimmed,
-      status: "进行中",
-      deadline: deadline.trim() || "未定",
-      progress: 0,
-      riskCount: 0,
-      risks: [],
-      milestones: [],
-      members: ["me"],
-      advice:
-        "新建的项目，旁白还没有观察。多在对话里聊到它，我会开始记录风险、人物和节点。",
-    });
+    try {
+    await onCreated(trimmed, deadline.trim());
+    setError("");
     setCreating(false);
     setName("");
     setDeadline("");
+    } catch { setError("创建失败，请重试"); }
   };
 
   return (
@@ -104,6 +105,7 @@ export function ProjectsPanel({
         </h2>
       </PanelHeader>
       <PanelBody>
+        {error && <p role="alert" className="text-sm text-vermilion">{error}</p>}
         {creating ? (
           <div className="space-y-5">
             <div className="kicker">新建项目档案 · NEW PROJECT</div>

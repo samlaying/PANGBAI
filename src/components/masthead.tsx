@@ -1,8 +1,7 @@
 "use client";
 
-import { Bell, BookOpen, ChevronDown, FileText, FolderOpen, PanelLeftOpen } from "lucide-react";
+import { Bell, ChevronDown, FileText, FolderOpen, PanelLeftOpen } from "lucide-react";
 import type { Project } from "@/lib/types";
-import { ME } from "@/lib/mock-data";
 import { useUI } from "./ui-context";
 import { Notifications } from "./overlays/notifications";
 
@@ -133,7 +132,7 @@ export function Masthead({
           >
             <Bell className="size-[16px]" strokeWidth={1.5} />
             <span className="absolute right-1 top-1 grid size-3.5 place-items-center rounded-full bg-vermilion font-mono text-[8.5px] font-medium text-paper">
-              3
+              {project?.riskCount || 0}
             </span>
           </button>
 
@@ -142,11 +141,11 @@ export function Masthead({
             onClick={ui.openSettings}
             className="flex items-center gap-1.5 px-2 py-1 transition-colors hover:bg-paper-deep"
           >
-            <span className="font-serif text-[13px] font-semibold">{ME.name}</span>
+            <span className="font-serif text-[13px] font-semibold">我</span>
             <ChevronDown className="size-3 text-ink-mute" strokeWidth={1.5} />
           </button>
 
-          {notifOpen && <Notifications onClose={() => setNotifOpen(false)} />}
+          {notifOpen && <Notifications projects={project ? [project] : []} onClose={() => setNotifOpen(false)} />}
         </div>
       </div>
     </header>
