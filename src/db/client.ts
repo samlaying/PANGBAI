@@ -3,6 +3,7 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import * as schema from "./schema";
 import path from "path";
 import fs from "fs";
+import { migrateDatabase } from "./migrate";
 
 const dbDir = path.join(process.cwd(), ".data");
 if (!fs.existsSync(dbDir)) {
@@ -15,6 +16,7 @@ const sqlite = new Database(dbPath);
 // 启用 WAL 模式以获得极佳的并发读写与防锁死表现
 sqlite.pragma("journal_mode = WAL");
 sqlite.pragma("foreign_keys = ON");
+migrateDatabase(sqlite);
 
 export const db = drizzle(sqlite, { schema });
 export { sqlite };

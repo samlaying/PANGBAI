@@ -1,6 +1,8 @@
 import { db } from "@/db/client";
-import { people, personModels, evidence, memoryCandidates } from "@/db/schema";
+import { people, personModels, evidence } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
+import { sqlite } from "@/db/client";
+import { randomUUID } from "node:crypto";
 
 export async function getPeopleWithDetails() {
   const allPeople = await db.select().from(people);
@@ -87,70 +89,38 @@ export interface ConfirmMemoryInput {
  */
 export async function confirmMemoryToDatabase(input: ConfirmMemoryInput) {
   const { personId, candidateId, observation, inferredPattern, source = "对话提炼沉淀" } = input;
-  const rawConfidence = input.confidence > 1 ? input.confidence / 100 : input.confidence;
-
-  // 1. 若有 candidateId，更新 candidate 状态为 confirmed
-  if (candidateId) {
-    await db
-      .update(memoryCandidates)
-      .set({ status: "confirmed" })
-      .where(eq(memoryCandidates.id, candidateId));
+  const rawConfidence = Number(input.confidence > 1 ? input.confidence / 100 : input.confidence);
+  if (!personId || !observation.trim() || !inferredPattern.trim() || !Number.isFinite(rawConfidence) || rawConfidence < 0 || rawConfidence > 1) {
+    throw new Error("Invalid memory confirmation");
   }
 
-  // 2. 插入新证据记录
-  const newEvidenceId = `ev_${Date.now()}`;
-  await db.insert(evidence).values({
-    id: newEvidenceId,
-    personId,
-    observation,
-    source,
-    dateStr: "刚刚 16:30",
-  });
+  sqlite.transaction(() => {
+    const person = sqlite.prepare("SELECT id FROM people WHERE id = ?").get(personId);
+    if (!person) throw new Error("Person not found");
 
-  // 3. 检查该人物是否已有相似或相同 Pattern
-  const existingModels = await db
-    .select()
-    .from(personModels)
-    .where(eq(personModels.personId, personId));
+    if (candidateId) {
+      const candidate = sqlite.prepare("SELECT status FROM memory_candidates WHERE id = ? AND person_id = ?")
+        .get(candidateId, personId) as { status: string } | undefined;
+      if (!candidate || candidate.status === "ignored") throw new Error("Memory candidate not found or ignored");
+      if (candidate.status === "confirmed") return;
+      const result = sqlite.prepare("UPDATE memory_candidates SET status = 'confirmed' WHERE id = ? AND person_id = ? AND status = 'pending'")
+        .run(candidateId, personId);
+      if (result.changes === 0) throw new Error("Memory candidate is not pending");
+    }
 
-  const matchedModel = existingModels.find(
-    (m) =>
-      m.pattern.includes(inferredPattern) ||
-      inferredPattern.includes(m.pattern) ||
-      (m.pattern.includes("保底") && inferredPattern.includes("保底"))
-  );
+    sqlite.prepare("INSERT INTO evidence (id, person_id, observation, source, date_str) VALUES (?, ?, ?, ?, ?)")
+      .run(randomUUID(), personId, observation.trim(), source, new Date().toISOString());
+    const existing = sqlite.prepare("SELECT id, confidence, evidence_count FROM person_models WHERE person_id = ? AND pattern = ?")
+      .get(personId, inferredPattern.trim()) as { id: string; confidence: number; evidence_count: number } | undefined;
+    if (existing) {
+      sqlite.prepare("UPDATE person_models SET confidence = ?, evidence_count = ?, last_observed_at = ? WHERE id = ?")
+        .run(Math.min(0.98, Math.max(existing.confidence, rawConfidence) + 0.03), existing.evidence_count + 1, new Date().toISOString(), existing.id);
+    } else {
+      sqlite.prepare("INSERT INTO person_models (id, person_id, pattern, confidence, evidence_count, last_observed_at) VALUES (?, ?, ?, ?, 1, ?)")
+        .run(randomUUID(), personId, inferredPattern.trim(), rawConfidence, new Date().toISOString());
+    }
+    sqlite.prepare("UPDATE people SET updated_at = ? WHERE id = ?").run(new Date().toISOString(), personId);
+  })();
 
-  if (matchedModel) {
-    // 贝叶斯式累加：证据数量 +1，微调置信度
-    const newCount = matchedModel.evidenceCount + 1;
-    const newConfidence = Math.min(0.98, Math.max(matchedModel.confidence, rawConfidence) + 0.03);
-
-    await db
-      .update(personModels)
-      .set({
-        pattern: inferredPattern, // 用更精确的表述更新
-        confidence: newConfidence,
-        evidenceCount: newCount,
-        lastObservedAt: "刚刚",
-      })
-      .where(eq(personModels.id, matchedModel.id));
-  } else {
-    // 插入全新提炼的 Pattern
-    await db.insert(personModels).values({
-      id: `pm_${personId}_${Date.now()}`,
-      personId,
-      pattern: inferredPattern,
-      confidence: rawConfidence,
-      evidenceCount: 1,
-      lastObservedAt: "刚刚",
-    });
-  }
-
-  // 4. 更新人物实体的修改时间
-  await db
-    .update(people)
-    .set({ updatedAt: new Date().toISOString() })
-    .where(eq(people.id, personId));
-
-  return await getPersonById(personId);
+  return getPersonById(personId);
 }

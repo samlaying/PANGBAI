@@ -7,7 +7,7 @@ export async function POST(req: NextRequest) {
   try {
     const { messages, activeCanvas, activeProject, projectId } = await req.json();
 
-    const targetProjectId = projectId || (activeProject ? activeProject.id : "recruitment-agent");
+    const targetProjectId = projectId || activeProject?.id;
 
     // 动态从数据库和当前工作区组装权威 System Prompt
     const systemPrompt = await assembleCoachContext({
@@ -15,9 +15,8 @@ export async function POST(req: NextRequest) {
       activeCanvas,
     });
 
-    const apiKey =
-      process.env.SILICONFLOW_API_KEY ||
-      "sk-nnrmbvsitmenuyixeywlohhczbwntzprzgivbwligexpssji";
+    const apiKey = process.env.SILICONFLOW_API_KEY;
+    if (!apiKey) return new Response(JSON.stringify({ error: "Chat service is not configured" }), { status: 503, headers: { "Content-Type": "application/json" } });
     const baseUrl =
       process.env.SILICONFLOW_BASE_URL || "https://api.siliconflow.cn/v1";
     const model = process.env.DEFAULT_MODEL || "deepseek-ai/DeepSeek-V3";

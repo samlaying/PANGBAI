@@ -48,6 +48,8 @@ export async function PUT(
 ) {
   try {
     const { id } = await params;
+    const existing = await db.select({ id: projectArtifacts.id }).from(projectArtifacts).where(eq(projectArtifacts.id, id)).limit(1);
+    if (existing.length === 0) return NextResponse.json({ error: "Artifact not found" }, { status: 404 });
     const body = await req.json();
     const { content, title } = body;
 
