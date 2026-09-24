@@ -52,27 +52,35 @@ export async function POST(req: NextRequest) {
     // 将上游流式数据转换为标准的文本流返回给前端
     const encoder = new TextEncoder();
     const decoder = new TextDecoder();
+    let pending = "";
 
-    const transformStream = new TransformStream({
-      async transform(chunk, controller) {
-        const text = decoder.decode(chunk, { stream: true });
-        const lines = text.split("\n");
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed || trimmed === "data: [DONE]") continue;
-          if (trimmed.startsWith("data: ")) {
-            try {
-              const data = JSON.parse(trimmed.slice(6));
-              const delta = data.choices?.[0]?.delta;
-              const content = delta?.content || delta?.reasoning_content;
-              if (content) {
-                controller.enqueue(encoder.encode(content));
-              }
-            } catch {
-              // 忽略畸变 chunk
-            }
-          }
+    const emitLine = (line: string, controller: TransformStreamDefaultController<Uint8Array>) => {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith("data:")) return;
+      const payload = trimmed.slice(5).trim();
+      if (!payload || payload === "[DONE]") return;
+      try {
+        const data = JSON.parse(payload);
+        const content = data.choices?.[0]?.delta?.content;
+        if (typeof content === "string" && content) controller.enqueue(encoder.encode(content));
+      } catch {
+        // 跳过上游无效事件；完整事件会在换行后才进入此处
+      }
+    };
+
+    const transformStream = new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk, controller) {
+        pending += decoder.decode(chunk, { stream: true });
+        let newline = pending.indexOf("\n");
+        while (newline !== -1) {
+          emitLine(pending.slice(0, newline), controller);
+          pending = pending.slice(newline + 1);
+          newline = pending.indexOf("\n");
         }
+      },
+      flush(controller) {
+        pending += decoder.decode();
+        if (pending) emitLine(pending, controller);
       },
     });
 

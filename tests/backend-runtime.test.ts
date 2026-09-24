@@ -102,3 +102,32 @@ test("coach context has no hard-coded demo identity or project", async () => {
   const prompt = await assembleCoachContext();
   assert.doesNotMatch(prompt, /张明|王总|招聘 Agent/);
 });
+
+test("chat stream preserves SSE events split across network chunks", async () => {
+  const previousFetch = globalThis.fetch;
+  const previousKey = process.env.SILICONFLOW_API_KEY;
+  process.env.SILICONFLOW_API_KEY = "test-key";
+  const event = 'data: {"choices":[{"delta":{"content":"你好"}}]}\n\ndata: [DONE]\n\n';
+  const encoder = new TextEncoder();
+  globalThis.fetch = async () => new Response(new ReadableStream({
+    start(controller) {
+      controller.enqueue(encoder.encode(event.slice(0, 25)));
+      controller.enqueue(encoder.encode(event.slice(25, 45)));
+      controller.enqueue(encoder.encode(event.slice(45)));
+      controller.close();
+    },
+  }));
+  try {
+    const { POST } = await import("../src/app/api/chat/route");
+    const response = await POST(new Request("http://localhost/api/chat", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: [{ role: "user", content: "你好" }] }),
+    }) as never);
+    assert.equal(response.status, 200);
+    assert.equal(await response.text(), "你好");
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousKey === undefined) delete process.env.SILICONFLOW_API_KEY;
+    else process.env.SILICONFLOW_API_KEY = previousKey;
+  }
+});
