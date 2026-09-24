@@ -139,7 +139,7 @@ export function AppShell() {
                 <EmptyState />
               ) : (
                 <ChatFlow
-                  messages={chat.chatMessages}
+                  messages={chat.messages}
                   typing={chat.isRunning}
                 />
               )}

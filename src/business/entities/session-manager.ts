@@ -1,6 +1,5 @@
 import { agentBus } from "../bus/agent-bus";
 import { AgentSession } from "./agent-session";
-import { canvasDocumentManager } from "./canvas-document";
 import { workspaceManager } from "./workspace-manager";
 
 /**
@@ -24,7 +23,7 @@ export class SessionManager {
   selectSession(id: string): void {
     if (this.activeSessionId === id) return;
     this.activeSessionId = id;
-    canvasDocumentManager.closeDoc();
+    agentBus.dispatch("canvas_close_requested", {});
     agentBus.dispatch("session_changed", {
       sessionId: id,
       action: "message_added",
@@ -50,7 +49,7 @@ export class SessionManager {
     const session = new AgentSession(crypto.randomUUID(), title, projectId);
     this.sessions = [session, ...this.sessions];
     this.activeSessionId = session.id;
-    canvasDocumentManager.closeDoc();
+    agentBus.dispatch("canvas_close_requested", {});
     agentBus.dispatch("session_changed", {
       sessionId: session.id,
       action: "message_added",

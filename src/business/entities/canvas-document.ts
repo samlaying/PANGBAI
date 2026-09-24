@@ -17,6 +17,7 @@ export class CanvasDocumentManager {
   public activeProjectId?: string;
 
   constructor() {
+    agentBus.on("canvas_close_requested", () => this.closeDoc());
     agentBus.on("canvas_open_requested", (request) => {
       this.currentDoc = {
         id: crypto.randomUUID(),

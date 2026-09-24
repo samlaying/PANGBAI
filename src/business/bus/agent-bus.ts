@@ -24,6 +24,7 @@ export type BusEventMap = {
     content: string;
     projectId?: string;
   };
+  canvas_close_requested: Record<string, never>;
   overlay_requested: {
     type: "person" | "project" | "evidence" | "growth" | "meeting" | "settings";
     id?: string;
