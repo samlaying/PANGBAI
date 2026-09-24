@@ -1,36 +1,22 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 旁白 PANGBAI
 
-## Getting Started
+本地单用户工作区。人物、项目、文档与确认后的记忆存储在 SQLite；首次运行创建空数据库，不写入演示资料。
 
-First, run the development server:
+## 开发
 
 ```bash
+npm ci
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+打开 http://localhost:3000，在「人物」和「项目」面板添加真实资料。数据库位于 `.data/pangbai.db`，已由 `.gitignore` 排除。对话功能需要设置 `SILICONFLOW_API_KEY`；可选 `SILICONFLOW_BASE_URL` 与 `DEFAULT_MODEL`。未配置密钥时，对话会显示服务未配置错误，不会生成假回复。
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 验证
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm test
+npm run lint
+npm run build
+```
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Canvas 中的「保存」按钮写入当前项目的文档。人物观察确认在数据库事务中完成。当前会议与成长报告没有数据来源，页面显示空状态。

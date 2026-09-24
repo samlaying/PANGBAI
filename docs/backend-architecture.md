@@ -306,7 +306,7 @@ src/
     │   ├── artifacts.ts
     │   ├── memory-candidates.ts
     │   └── events.ts
-    ├── seed.ts                              # 种子数据（预置王总、李总、招聘 Agent 项目）
+    ├── migrate.ts                           # 首次启动自动建表，空数据库起步
     └── migrations/                          # Drizzle 迁移目录
 ```
 
@@ -316,6 +316,6 @@ src/
 
 | 阶段 | 核心任务 | 交付产物与验证标准 |
 |:---|:---|:---|
-| **Phase 1: 数据层与核心闭环（当前步骤）** | 1. 引入 Drizzle ORM + SQLite (`better-sqlite3`)<br>2. 建立 Schema 与数据库初始化 Seed 脚本<br>3. 实现 Context Assembler（集成项目与 Canvas 实时感知）<br>4. 实现人机协同记忆沉淀 API (`/confirm`) | 纯代码打通真实数据库：能够从 DB 读取人物与产物，并在对话后一键确认将记忆存入真实 SQLite，页面刷新后数据依然保持。 |
+| **Phase 1: 数据层与核心闭环（当前步骤）** | 1. 引入 Drizzle ORM + SQLite (`better-sqlite3`)<br>2. 建立 Schema 与空库自动初始化<br>3. 实现 Context Assembler（集成项目与 Canvas 实时感知）<br>4. 实现人机协同记忆沉淀 API (`/confirm`) | 从 DB 读取人物与产物；创建、编辑和确认操作写入 SQLite，页面刷新后数据保持。 |
 | **Phase 2: 职场反思与主动推演** | 1. 完善后台 Reflection Engine，实现自动从对话提炼 Candidate<br>2. 会议推演引擎落库，基于人物真实证据链动态生成尖锐追问<br>3. 接入 SQLite FTS5 全文检索，赋能 ⌘K 快速搜索万物 | 在对话中提到新事件，AI 自动预填并弹出确认卡片；点击确认后即刻更新人物面板；⌘K 支持毫秒级全文匹配。 |
 | **Phase 3: 自动化与扩展演进** | 1. 轻量定时任务 Scheduler（开会前 2 小时主动提醒）<br>2. 导出导入备份（Markdown / SQLite 文件导出）<br>3. 多人协作或本地模型（Ollama）可选接入 | 支持本地脱网单机离线运行，具备主动定时提醒能力。 |

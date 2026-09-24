@@ -65,7 +65,7 @@ export function AppShell() {
       startRehearsal: () =>
         ask("请根据当前对话扮演沟通对象，与我进行一轮真实的职场沟通演练。先提出一个具体问题，等我回答后再追问，并在结束时给出针对性的反馈。"),
       createProject: () => router.setPanel({ type: "projects" }),
-      loadCanvasDoc: (title, content) => {
+      loadCanvasDoc: async (title, content) => {
         canvas.openDoc({
           id: crypto.randomUUID(),
           title,
@@ -73,9 +73,11 @@ export function AppShell() {
           updatedAt: "刚刚",
         });
       },
-      confirmMemory: workspace.confirmMemory,
+      confirmMemory: async (data) => {
+        await workspace.confirmMemory(data);
+      },
     }),
-    [router, workspace.projects, workspace.confirmMemory, canvas, ask],
+    [router, workspace, canvas, ask],
   );
 
   const navActive: NavKey = router.panel
