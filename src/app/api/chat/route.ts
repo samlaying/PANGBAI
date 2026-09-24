@@ -13,15 +13,16 @@ export async function POST(req: NextRequest) {
   let fullReply = "";
 
   try {
-    const { messages, activeCanvas, activeProject, projectId, sessionId, sessionTitle } = await req.json();
+    const { messages, activeCanvas, activeProject, projectId, sessionId, sessionTitle, profile } = await req.json();
 
     const targetProjectId = projectId || activeProject?.id;
     const currentSessionId = sessionId || randomUUID();
 
-    // 动态从数据库和当前工作区组装权威 System Prompt
+    // 动态从数据库、当前工作区及用户画像组装权威 System Prompt
     const systemPrompt = await assembleCoachContext({
       projectId: targetProjectId,
       activeCanvas,
+      profile,
     });
 
     const apiKey = process.env.SILICONFLOW_API_KEY;

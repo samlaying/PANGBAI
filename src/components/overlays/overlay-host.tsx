@@ -8,6 +8,7 @@ import { MeetingPanel } from "../panels/meeting-panel";
 import { SettingsPanel } from "../panels/settings-panel";
 import { EvidenceModal } from "../modals/evidence-modal";
 import { GrowthModal } from "../modals/growth-modal";
+import { OnboardingModal } from "../modals/onboarding-modal";
 import { CommandMenu } from "./command-menu";
 import type { useOverlayRouter } from "@/hooks/use-overlay-router";
 import type { useWorkspace } from "@/hooks/use-workspace";
@@ -67,6 +68,9 @@ export function OverlayHost({
       )}
       {modal?.type === "growth" && (
         <GrowthModal onClose={() => setModal(null)} />
+      )}
+      {modal?.type === "onboarding" && (
+        <OnboardingModal onClose={() => setModal(null)} />
       )}
 
       {/* Layer 0 · ⌘K 检索 */}

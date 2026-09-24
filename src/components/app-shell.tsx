@@ -14,6 +14,7 @@ import { useAgentSession } from "@/hooks/use-agent-session";
 import { useWorkspace } from "@/hooks/use-workspace";
 import { useCanvas } from "@/hooks/use-canvas";
 import { useOverlayRouter } from "@/hooks/use-overlay-router";
+import { clientStorage } from "@/infra/storage/client-storage";
 
 export function AppShell() {
   const router = useOverlayRouter();
@@ -42,6 +43,14 @@ export function AppShell() {
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
   }, [chat.messages.length, chat.isRunning, chat.activeConvId]);
 
+  // 首次进入检测：若尚未初始化【名称、风格、行业】，弹出初始化向导
+  useEffect(() => {
+    const profile = clientStorage.getItem<{ isInitialized?: boolean } | null>("workspace_profile", null);
+    if (!profile || !profile.isInitialized) {
+      router.setModal({ type: "onboarding" });
+    }
+  }, [router]);
+
   const uiActions: UIActions = useMemo(
     () => ({
       openPerson: (id) => router.setPanel({ type: "person", id }),
@@ -60,6 +69,7 @@ export function AppShell() {
       openPeople: () => router.setPanel({ type: "people" }),
       openProjects: () => router.setPanel({ type: "projects" }),
       openSettings: () => router.setPanel({ type: "settings" }),
+      openOnboarding: () => router.setModal({ type: "onboarding" }),
       closePanel: () => router.closeAll(),
       ask,
       startRehearsal: () =>

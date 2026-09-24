@@ -12,6 +12,7 @@ export interface UIActions {
   openPeople: () => void;
   openProjects: () => void;
   openSettings: () => void;
+  openOnboarding: () => void;
   closePanel: () => void;
   /** 关掉所有浮层，把问题回填到输入框 */
   ask: (text: string) => void;

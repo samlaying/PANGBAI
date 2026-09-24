@@ -186,3 +186,21 @@ test("sessions and messages persist under project_id with evidence causality", a
   assert.equal(savedEv[0].rationale, "被动知情打乱其掌控节奏，对排期变更极度敏感");
   assert.equal(savedEv[0].inferredPatternId, "pat_risk_advance");
 });
+
+test("assembleCoachContext injects workspace profile with name, industry and coaching style", async () => {
+  const { assembleCoachContext } = await import("../src/server/agent/context-assembler");
+  const prompt = await assembleCoachContext({
+    profile: {
+      name: "智能硬件产研中心",
+      industry: "hardware",
+      style: "sharp",
+      isInitialized: true,
+    },
+  });
+
+  assert.match(prompt, /智能硬件产研中心/);
+  assert.match(prompt, /消费电子 \/ 智能硬件/);
+  assert.match(prompt, /犀利实战型/);
+  assert.match(prompt, /供应链试产/);
+  assert.match(prompt, /一针见血/);
+});

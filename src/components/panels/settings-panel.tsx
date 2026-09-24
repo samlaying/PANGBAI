@@ -4,6 +4,14 @@ import { useState } from "react";
 import { ChevronDown, Download, PencilLine, Trash2 } from "lucide-react";
 import { SectionTitle, Toggle, GhostButton } from "../atoms";
 import { PanelBody, PanelHeader } from "./side-panel";
+import { useUI } from "../ui-context";
+import { clientStorage } from "@/infra/storage/client-storage";
+import {
+  DEFAULT_WORKSPACE_PROFILE,
+  INDUSTRY_OPTIONS,
+  COACHING_STYLE_OPTIONS,
+  type WorkspaceProfile,
+} from "@/config/workspace-profile";
 
 function Row({
   label,
@@ -33,6 +41,11 @@ export function SettingsPanel() {
   const [todoRemind, setTodoRemind] = useState(true);
   const [relRemind, setRelRemind] = useState(false);
 
+  const ui = useUI();
+  const profile = clientStorage.getItem<WorkspaceProfile>("workspace_profile", DEFAULT_WORKSPACE_PROFILE);
+  const industryItem = INDUSTRY_OPTIONS.find((i) => i.key === profile.industry);
+  const styleItem = COACHING_STYLE_OPTIONS.find((s) => s.key === profile.style);
+
   return (
     <>
       <PanelHeader kicker="设置 · PREFERENCES">
@@ -40,18 +53,32 @@ export function SettingsPanel() {
       </PanelHeader>
 
       <PanelBody>
-        {/* 我 */}
+        {/* 我 · PROFILE */}
         <section className="space-y-3">
-          <SectionTitle>我 · PROFILE</SectionTitle>
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="font-serif text-[16px] font-bold">个人资料未设置</div>
-              <div className="mt-0.5 text-[12px] text-ink-mute">本地工作区</div>
+          <SectionTitle>工作区基调设定 · PROFILE</SectionTitle>
+          <div className="border border-rule bg-paper p-3.5 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="font-serif text-[16px] font-bold text-ink">
+                  {profile.name || "我的工作区"}
+                </div>
+                <div className="mt-0.5 text-[11.5px] text-ink-mute">
+                  大模型 Harness 专属定制空间
+                </div>
+              </div>
+              <GhostButton onClick={() => ui.openOnboarding()}>
+                <PencilLine className="size-3.5" strokeWidth={1.5} />
+                修改设定
+              </GhostButton>
             </div>
-            <GhostButton>
-              <PencilLine className="size-3.5" strokeWidth={1.5} />
-              编辑资料
-            </GhostButton>
+            <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-rule font-mono text-[10.5px]">
+              <span className="border border-rule px-2 py-0.5 text-ink-soft">
+                行业：{industryItem?.label || "通用"}
+              </span>
+              <span className="border border-accent/40 bg-paper-warm px-2 py-0.5 text-accent font-semibold">
+                风格：{styleItem?.label || "沉稳军师"}
+              </span>
+            </div>
           </div>
         </section>
 

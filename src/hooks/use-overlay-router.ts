@@ -15,6 +15,7 @@ export type PanelState =
 export type ModalState =
   | { type: "evidence"; id: string }
   | { type: "growth" }
+  | { type: "onboarding" }
   | null;
 
 /**

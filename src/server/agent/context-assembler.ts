@@ -1,6 +1,7 @@
 import { db } from "@/db/client";
 import { people, personModels, projects, projectArtifacts, evidence } from "@/db/schema";
 import { eq, inArray } from "drizzle-orm";
+import { INDUSTRY_OPTIONS, COACHING_STYLE_OPTIONS, type WorkspaceProfile } from "@/config/workspace-profile";
 
 export interface ActiveCanvasContext {
   id?: string;
@@ -13,6 +14,7 @@ export interface AssembleContextOptions {
   projectId?: string;
   focusedPersonId?: string;
   activeCanvas?: ActiveCanvasContext | null;
+  profile?: Partial<WorkspaceProfile>;
 }
 
 const COACH_BASE_PHILOSOPHY = `你是「旁白」，一位清醒、真诚、懂职场人性的 AI 职场导师。基于用户提供的事实、人物档案与项目文档回答。
@@ -48,9 +50,21 @@ const COACH_BASE_PHILOSOPHY = `你是「旁白」，一位清醒、真诚、懂�
  * 动态组装 Coach Agent 的 System Prompt，打通真实数据库世界模型与 Canvas 实时工作区
  */
 export async function assembleCoachContext(options: AssembleContextOptions = {}): Promise<string> {
-  const { projectId, focusedPersonId, activeCanvas } = options;
+  const { projectId, focusedPersonId, activeCanvas, profile } = options;
 
   let prompt = COACH_BASE_PHILOSOPHY;
+
+  // 0. 工作区初始化基调：【名称、风格、行业】映射注入
+  if (profile) {
+    const industryItem = INDUSTRY_OPTIONS.find((i) => i.key === profile.industry);
+    const styleItem = COACHING_STYLE_OPTIONS.find((s) => s.key === profile.style);
+
+    prompt += `\n\n【用户与工作区专属辅导设定】:
+- 工作区/用户称谓: ${profile.name || "我的工作区"}
+- 所属业务行业: ${industryItem ? `${industryItem.label}（${industryItem.contextNote}）` : "通用行业"}
+- 期望辅导风格: ${styleItem ? `${styleItem.label}（${styleItem.promptGuidance}）` : "沉稳军师型"}
+请在后续全部沟通、分析与建议中，严格贯彻该行业的业务思维特征，并始终保持上述辅导风格的沟通基调！`;
+  }
 
   // 1. 项目级干系人与因果历史按需 JIT 供给 (只加载与本上下文相关的干系人)
   try {

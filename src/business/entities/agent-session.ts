@@ -4,6 +4,8 @@ import type { AgentEvent } from "@/infra/transport/agent-protocol";
 import type { AgentMessage, MessagePart } from "./message-part";
 import { parseMarkdownToBlocksAndParts } from "../parser/block-parser";
 import { workspaceManager } from "./workspace-manager";
+import { clientStorage } from "@/infra/storage/client-storage";
+import { DEFAULT_WORKSPACE_PROFILE, type WorkspaceProfile } from "@/config/workspace-profile";
 import type { Block, ChatMessage, Conversation, Project } from "@/lib/types";
 
 export interface SendChatOptions {
@@ -11,6 +13,7 @@ export interface SendChatOptions {
   activeCanvas?: { title: string; content: string };
   activeProject?: Project | Record<string, unknown>;
   projectArtifacts?: unknown[];
+  profile?: WorkspaceProfile;
 }
 
 /**
@@ -91,6 +94,7 @@ export class AgentSession {
           activeCanvas: options?.activeCanvas,
           activeProject: options?.activeProject,
           projectArtifacts: options?.projectArtifacts,
+          profile: options?.profile || clientStorage.getItem("workspace_profile", DEFAULT_WORKSPACE_PROFILE),
         },
         (event: AgentEvent) => {
           this.handleAgentEvent(assistantMsg, event);
