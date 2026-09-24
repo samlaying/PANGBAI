@@ -122,3 +122,29 @@ test("AgentSession processes stream events into structured parts", () => {
 
   assert.equal(toolPart.status, "done");
 });
+
+test("parseMarkdownToBlocksAndParts unwraps outer markdown code block and preserves divider lines without false artifact detection", () => {
+  const content = `\`\`\`markdown
+---
+复盘需求结构提示:
+1. 场景性质: [日常沟通]
+2. 相关人员: [王总]
+---
+需要您补充的关键细节：
+• 冲突发生的前置背景
+• 对方的决策权限范围
+\`\`\``;
+
+  const result = parseMarkdownToBlocksAndParts(content);
+
+  // 不应误判为 artifact
+  assert.equal(result.artifactDoc, undefined);
+  assert.ok(result.parts.length > 0);
+  // 必须成功解开外层代码围栏
+  const textParts = result.parts.filter((p) => p.type === "text");
+  assert.ok(textParts.length > 0);
+  const combined = textParts.map((p) => (p.type === "text" ? p.text : "")).join("\n");
+  assert.doesNotMatch(combined, /```markdown/);
+  assert.match(combined, /复盘需求结构提示/);
+  assert.match(combined, /需要您补充的关键细节/);
+});
