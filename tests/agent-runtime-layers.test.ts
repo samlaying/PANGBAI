@@ -148,3 +148,62 @@ test("parseMarkdownToBlocksAndParts unwraps outer markdown code block and preser
   assert.match(combined, /复盘需求结构提示/);
   assert.match(combined, /需要您补充的关键细节/);
 });
+
+test("parseMarkdownToBlocksAndParts normalizes stuck dividers and headings like ---### into separate blocks", () => {
+  const stuckContent = `我会从三个维度帮你拆解：---### 一、破局策略预判\n1. 针对资源被砍风险:\n• 提前准备两版方案"2. 针对延期质疑:\n• 主动暴露风险赶工）---### 二、分角色发言提纲`;
+
+  const result = parseMarkdownToBlocksAndParts(stuckContent);
+  const textParts = result.parts.filter((p) => p.type === "text");
+  const combined = textParts.map((p) => (p.type === "text" ? p.text : "")).join("\n");
+
+  assert.doesNotMatch(combined, /---###/);
+  assert.match(combined, /### 一、破局策略预判/);
+  assert.match(combined, /### 二、分角色发言提纲/);
+  assert.match(combined, /2\. 针对延期质疑/);
+});
+
+test("sseTransport streams plain text chunks preserving all newlines and spaces", async () => {
+  const { SSETransport } = await import("../src/infra/transport/sse-transport");
+  const transport = new SSETransport();
+
+  const originalFetch = globalThis.fetch;
+  const rawTextChunks = [
+    "拆解：\n\n",
+    "---\n\n",
+    "### 一、破局策略预判\n\n",
+    "1. 针对资源被砍风险:\n",
+    "• 准备方案\n",
+  ];
+
+  let chunkIdx = 0;
+  globalThis.fetch = async () =>
+    new Response(
+      new ReadableStream({
+        pull(controller) {
+          if (chunkIdx < rawTextChunks.length) {
+            controller.enqueue(new TextEncoder().encode(rawTextChunks[chunkIdx++]));
+          } else {
+            controller.close();
+          }
+        },
+      }),
+      {
+        headers: { "Content-Type": "text/plain; charset=utf-8" },
+      },
+    );
+
+  let accumulated = "";
+  try {
+    await transport.stream("/api/test", {}, (event) => {
+      if (event.type === "message.delta") {
+        accumulated += event.delta;
+      }
+    });
+
+    assert.equal(accumulated, rawTextChunks.join(""));
+    assert.match(accumulated, /拆解：\n\n---\n\n### 一、破局策略预判/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+

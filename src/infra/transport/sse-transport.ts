@@ -37,10 +37,43 @@ export class SSETransport {
       throw new Error(`SSE transport failed with status ${response.status}`);
     }
 
+    const contentType = response.headers.get("content-type") || "";
+    const isSSE = contentType.includes("text/event-stream");
+
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
-    let buffer = "";
 
+    // 1. 若为标准 text/plain 流，直接无损分发每个文本 chunk，严禁做 \n\n 拆分或 trim，保留所有换行符与空格
+    if (!isSSE) {
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const textChunk = decoder.decode(value, { stream: true });
+          if (textChunk) {
+            onEvent({
+              type: "message.delta",
+              delta: textChunk,
+              timestamp: Date.now(),
+            });
+          }
+        }
+        const rest = decoder.decode();
+        if (rest) {
+          onEvent({
+            type: "message.delta",
+            delta: rest,
+            timestamp: Date.now(),
+          });
+        }
+      } finally {
+        reader.releaseLock();
+      }
+      return;
+    }
+
+    // 2. 若为标准 SSE (text/event-stream)，按标准 event/data 块解析
+    let buffer = "";
     try {
       while (true) {
         const { done, value } = await reader.read();

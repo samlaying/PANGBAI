@@ -26,6 +26,13 @@ export function parseMarkdownToBlocksAndParts(
     normalizedContent = outerCodeMatch[1].trim();
   }
 
+  // 容错规范化：若因模型输出或文本粘连导致段落与 ---### 连在同一行，自动切分换行
+  normalizedContent = normalizedContent
+    .replace(/---+(#{1,3}\s)/g, "\n\n---\n\n$1")
+    .replace(/([^\n\r])---+(#{1,3}\s)/g, "$1\n\n---\n\n$2")
+    .replace(/([^#\n\r])(#{1,3}\s[^\n]+)/g, "$1\n\n$2")
+    .replace(/([^\n\r])(\d+\.\s+[^\n]+)/g, "$1\n\n$2");
+
   // 1. 识别结构化 PRD / 方案骨架（含有效 YAML Frontmatter）
   const yamlMatch = normalizedContent.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
   if (yamlMatch) {
