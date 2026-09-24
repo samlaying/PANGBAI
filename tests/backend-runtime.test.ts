@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 test("a fresh database has the tables required by the API", async () => {
   const { db } = await import("../src/db/client");
-  const { people, projects, projectArtifacts, personModels, evidence, memoryCandidates } = await import("../src/db/schema");
+  const { people, projects, projectArtifacts, personModels, evidence, memoryCandidates, sessions, messages, llmCallTraces, projectSearchSnapshots } = await import("../src/db/schema");
   assert.ok(db);
   assert.ok(people);
   assert.ok(projects);
@@ -11,6 +11,10 @@ test("a fresh database has the tables required by the API", async () => {
   assert.ok(personModels);
   assert.ok(evidence);
   assert.ok(memoryCandidates);
+  assert.ok(sessions);
+  assert.ok(messages);
+  assert.ok(llmCallTraces);
+  assert.ok(projectSearchSnapshots);
 });
 
 test("fresh runtime contains no demo people or projects", async () => {
@@ -133,4 +137,52 @@ test("chat stream preserves SSE events split across network chunks", async () =>
     if (previousKey === undefined) delete process.env.SILICONFLOW_API_KEY;
     else process.env.SILICONFLOW_API_KEY = previousKey;
   }
+});
+
+test("sessions and messages persist under project_id with evidence causality", async () => {
+  const { db } = await import("../src/db/client");
+  const { projects, sessions, messages, evidence, people } = await import("../src/db/schema");
+  const { eq } = await import("drizzle-orm");
+
+  const projId = "proj_test_1";
+  await db.insert(projects).values({ id: projId, name: "供应链升级项目", status: "in_progress" });
+
+  // 1. 会话与消息持久化
+  const sessId = "sess_test_1";
+  await db.insert(sessions).values({ id: sessId, projectId: projId, title: "关于王总催排期的讨论" });
+  await db.insert(messages).values({
+    id: "msg_test_1",
+    sessionId: sessId,
+    projectId: projId,
+    role: "user",
+    partsJson: JSON.stringify([{ type: "text", text: "王总今天在群里催排期" }]),
+    timestampStr: "刚刚",
+  });
+
+  const savedSess = await db.select().from(sessions).where(eq(sessions.projectId, projId));
+  assert.equal(savedSess.length, 1);
+  assert.equal(savedSess[0].title, "关于王总催排期的讨论");
+
+  const savedMsgs = await db.select().from(messages).where(eq(messages.sessionId, sessId));
+  assert.equal(savedMsgs.length, 1);
+  assert.match(savedMsgs[0].partsJson, /王总今天在群里催排期/);
+
+  // 2. 带有项目与因果归因的证据持久化
+  const personId = "person_wang_test";
+  await db.insert(people).values({ id: personId, name: "王总", role: "CEO" });
+  await db.insert(evidence).values({
+    id: "ev_test_1",
+    personId,
+    projectId: projId,
+    observation: "群内直接当众催问进度",
+    rationale: "被动知情打乱其掌控节奏，对排期变更极度敏感",
+    inferredPatternId: "pat_risk_advance",
+    source: "群聊消息",
+    dateStr: "今天",
+  });
+
+  const savedEv = await db.select().from(evidence).where(eq(evidence.projectId, projId));
+  assert.equal(savedEv.length, 1);
+  assert.equal(savedEv[0].rationale, "被动知情打乱其掌控节奏，对排期变更极度敏感");
+  assert.equal(savedEv[0].inferredPatternId, "pat_risk_advance");
 });

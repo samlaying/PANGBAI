@@ -64,8 +64,11 @@ if (globalForDb.db) {
     CREATE TABLE IF NOT EXISTS evidence (
       id TEXT PRIMARY KEY,
       person_id TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+      project_id TEXT,
       event_id TEXT,
       observation TEXT NOT NULL,
+      rationale TEXT,
+      inferred_pattern_id TEXT,
       source TEXT NOT NULL,
       date_str TEXT,
       created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
@@ -98,6 +101,7 @@ if (globalForDb.db) {
     CREATE TABLE IF NOT EXISTS memory_candidates (
       id TEXT PRIMARY KEY,
       conversation_id TEXT,
+      project_id TEXT,
       person_id TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE,
       observation TEXT NOT NULL,
       inferred_pattern TEXT NOT NULL,
@@ -115,6 +119,54 @@ if (globalForDb.db) {
       person_id TEXT,
       project_id TEXT,
       metadata_json TEXT,
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS sessions (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      title TEXT NOT NULL DEFAULT '新对话',
+      session_type TEXT NOT NULL DEFAULT 'coaching',
+      active_canvas_id TEXT,
+      metadata_json TEXT,
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS messages (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      role TEXT NOT NULL,
+      parts_json TEXT NOT NULL,
+      timestamp_str TEXT,
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS llm_call_traces (
+      id TEXT PRIMARY KEY,
+      trace_id TEXT NOT NULL,
+      project_id TEXT,
+      session_id TEXT,
+      message_id TEXT,
+      model_name TEXT NOT NULL,
+      prompt_tokens INTEGER DEFAULT 0,
+      completion_tokens INTEGER DEFAULT 0,
+      total_tokens INTEGER DEFAULT 0,
+      estimated_cost_cny REAL DEFAULT 0,
+      ttft_ms INTEGER,
+      total_latency_ms INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'success',
+      raw_prompt TEXT,
+      raw_response TEXT,
+      metadata_json TEXT,
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS project_search_snapshots (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      session_id TEXT,
+      query TEXT NOT NULL,
+      intent TEXT,
+      sources_json TEXT NOT NULL,
+      synthesized_insight TEXT,
       created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
     );
   `).catch((err: unknown) => {

@@ -26,9 +26,13 @@ export const personModels = pgTable("person_models", {
 export const evidence = pgTable("evidence", {
   id: text("id").primaryKey(),
   personId: text("person_id").notNull().references(() => people.id, { onDelete: "cascade" }),
+  projectId: text("project_id"),                   // 关联的项目 (让事实沉淀到具体项目中)
   eventId: text("event_id"),                       // 关联的职场事件ID (可空)
   observation: text("observation").notNull(),      // 客观事实观察
+  rationale: text("rationale"),                    // AI 心理推断依据（为什么由此判断其性格动机）
+  inferredPatternId: text("inferred_pattern_id"),  // 支撑的行为模式 ID
   source: text("source").notNull(),                // "周会现场" | "群聊消息" | "1:1 复盘"
   dateStr: text("date_str"),                       // 如 "今天 14:30", "7月8日"
   createdAt: timestamp("created_at", { mode: "string", withTimezone: true }).defaultNow(),
 });
+

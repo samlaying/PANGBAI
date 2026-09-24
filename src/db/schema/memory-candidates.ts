@@ -4,6 +4,7 @@ import { people } from "./people";
 export const memoryCandidates = pgTable("memory_candidates", {
   id: text("id").primaryKey(),                     // 如 "cand_123"
   conversationId: text("conversation_id"),
+  projectId: text("project_id"),                   // 关联的项目
   personId: text("person_id").notNull().references(() => people.id, { onDelete: "cascade" }),
   observation: text("observation").notNull(),      // AI 预填事实观察
   inferredPattern: text("inferred_pattern").notNull(), // AI 归纳的 Pattern
