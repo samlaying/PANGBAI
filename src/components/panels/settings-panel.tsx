@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { ChevronDown, Download, PencilLine, Trash2 } from "lucide-react";
-import { ME } from "@/lib/mock-data";
 import { SectionTitle, Toggle, GhostButton } from "../atoms";
 import { PanelBody, PanelHeader } from "./side-panel";
 
@@ -46,8 +45,8 @@ export function SettingsPanel() {
           <SectionTitle>我 · PROFILE</SectionTitle>
           <div className="flex items-center justify-between">
             <div>
-              <div className="font-serif text-[16px] font-bold">{ME.name}</div>
-              <div className="mt-0.5 text-[12px] text-ink-mute">{ME.role}</div>
+              <div className="font-serif text-[16px] font-bold">个人资料未设置</div>
+              <div className="mt-0.5 text-[12px] text-ink-mute">本地工作区</div>
             </div>
             <GhostButton>
               <PencilLine className="size-3.5" strokeWidth={1.5} />

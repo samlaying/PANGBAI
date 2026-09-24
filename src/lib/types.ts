@@ -152,9 +152,28 @@ export type Block =
       quote?: string;
     };
 
+/* ── 回复元数据 ── */
+
+export interface TokenUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  /** 上游未返回 usage 时按文本长度估算 */
+  estimated?: boolean;
+}
+
+export type ReplyFeedback = "up" | "down";
+
 export type ChatMessage =
   | { id: string; role: "user"; time: string; text: string }
-  | { id: string; role: "assistant"; time: string; blocks: Block[] };
+  | {
+      id: string;
+      role: "assistant";
+      time: string;
+      blocks: Block[];
+      usage?: TokenUsage;
+      feedback?: ReplyFeedback;
+    };
 
 /* ── 对话 ── */
 

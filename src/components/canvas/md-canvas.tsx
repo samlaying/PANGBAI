@@ -59,75 +59,11 @@ function renderInline(text: string) {
   });
 }
 
-function RenderedMarkdown({ content }: { content: string }) {
-  const { yamlLines, body } = parseDocContent(content);
 
-  const meta: Record<string, string> = {};
-  for (const line of yamlLines) {
-    const colonIdx = line.indexOf(":");
-    if (colonIdx > 0) {
-      const key = line.slice(0, colonIdx).trim();
-      const val = line.slice(colonIdx + 1).trim().replace(/^["']|["']$/g, "");
-      if (val && !meta[key]) meta[key] = val;
-    }
-  }
-
-  const rawLines = body.split("\n");
+function renderMarkdownLines(rawLines: string[]) {
   let inCodeBlock = false;
   let codeBuffer: string[] = [];
-
-  return (
-    <div className="space-y-4 pb-16">
-      {/* 结构化 YAML 元数据档案卡 */}
-      {yamlLines.length > 0 && (
-        <div className="border border-rule bg-paper-warm/80 p-4 shadow-2xs">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-rule/60 pb-2.5">
-            <div className="flex items-center gap-2">
-              <span className="font-mono text-[10px] uppercase tracking-wider text-ink-mute">
-                YAML 元数据
-              </span>
-              {meta.type && (
-                <span className="border border-ink/20 bg-paper px-2 py-0.5 font-serif text-[11px] font-semibold text-ink">
-                  {meta.type}
-                </span>
-              )}
-              {meta.progress && (
-                <span className="border border-accent/40 bg-accent/10 px-2 py-0.5 font-serif text-[10.5px] font-medium text-accent">
-                  {meta.progress}
-                </span>
-              )}
-              {meta.version && (
-                <span className="font-mono text-[10px] text-ink-mute">
-                  {meta.version}
-                </span>
-              )}
-            </div>
-            {meta.date && (
-              <span className="font-mono text-[11px] text-ink-mute">
-                {meta.date}
-              </span>
-            )}
-          </div>
-
-          {meta.expected_solution && (
-            <div className="mt-2.5 text-[12.5px] leading-relaxed text-ink">
-              <span className="font-semibold text-accent">预期方案：</span>
-              <span>{meta.expected_solution}</span>
-            </div>
-          )}
-
-          {meta.stakeholders && (
-            <div className="mt-2 flex items-center gap-1.5 text-[11.5px] text-ink-mute">
-              <span>干系人：</span>
-              <span className="font-serif text-ink-soft">{meta.stakeholders}</span>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Markdown 正文排版 (杂志级视觉层级) */}
-      <div className="mt-4 space-y-1">
-        {rawLines.map((line, idx) => {
+  return rawLines.map((line, idx) => {
           const trimmed = line.trim();
 
           // 代码块处理
@@ -243,7 +179,75 @@ function RenderedMarkdown({ content }: { content: string }) {
               {renderInline(line)}
             </p>
           );
-        })}
+  });
+}
+
+function RenderedMarkdown({ content }: { content: string }) {
+  const { yamlLines, body } = parseDocContent(content);
+
+  const meta: Record<string, string> = {};
+  for (const line of yamlLines) {
+    const colonIdx = line.indexOf(":");
+    if (colonIdx > 0) {
+      const key = line.slice(0, colonIdx).trim();
+      const val = line.slice(colonIdx + 1).trim().replace(/^["']|["']$/g, "");
+      if (val && !meta[key]) meta[key] = val;
+    }
+  }
+
+  const rawLines = body.split("\n");
+  return (
+    <div className="space-y-4 pb-16">
+      {/* 结构化 YAML 元数据档案卡 */}
+      {yamlLines.length > 0 && (
+        <div className="border border-rule bg-paper-warm/80 p-4 shadow-2xs">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-rule/60 pb-2.5">
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-[10px] uppercase tracking-wider text-ink-mute">
+                YAML 元数据
+              </span>
+              {meta.type && (
+                <span className="border border-ink/20 bg-paper px-2 py-0.5 font-serif text-[11px] font-semibold text-ink">
+                  {meta.type}
+                </span>
+              )}
+              {meta.progress && (
+                <span className="border border-accent/40 bg-accent/10 px-2 py-0.5 font-serif text-[10.5px] font-medium text-accent">
+                  {meta.progress}
+                </span>
+              )}
+              {meta.version && (
+                <span className="font-mono text-[10px] text-ink-mute">
+                  {meta.version}
+                </span>
+              )}
+            </div>
+            {meta.date && (
+              <span className="font-mono text-[11px] text-ink-mute">
+                {meta.date}
+              </span>
+            )}
+          </div>
+
+          {meta.expected_solution && (
+            <div className="mt-2.5 text-[12.5px] leading-relaxed text-ink">
+              <span className="font-semibold text-accent">预期方案：</span>
+              <span>{meta.expected_solution}</span>
+            </div>
+          )}
+
+          {meta.stakeholders && (
+            <div className="mt-2 flex items-center gap-1.5 text-[11.5px] text-ink-mute">
+              <span>干系人：</span>
+              <span className="font-serif text-ink-soft">{meta.stakeholders}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Markdown 正文排版 (杂志级视觉层级) */}
+      <div className="mt-4 space-y-1">
+        {renderMarkdownLines(rawLines)}
       </div>
     </div>
   );
@@ -252,6 +256,7 @@ function RenderedMarkdown({ content }: { content: string }) {
 export function MdCanvas({
   doc,
   onChange,
+  onSave,
   onClose,
   onAskAI,
   artifacts,
@@ -260,6 +265,7 @@ export function MdCanvas({
 }: {
   doc: CanvasDoc;
   onChange: (content: string) => void;
+  onSave: () => Promise<void>;
   onClose: () => void;
   onAskAI?: (prompt: string) => void;
   artifacts?: ProjectArtifact[];
@@ -267,6 +273,7 @@ export function MdCanvas({
   onNewArtifact?: () => void;
 }) {
   const [copied, setCopied] = useState(false);
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [fullWidth, setFullWidth] = useState(false);
   const [viewMode, setViewMode] = useState<"preview" | "edit">("preview");
   const [selectedSnippet, setSelectedSnippet] = useState<string | null>(null);
@@ -466,6 +473,13 @@ export function MdCanvas({
     >
       {/* 顶部工具条 */}
       <header className="flex h-12 shrink-0 items-center justify-between border-b border-rule bg-paper-warm/50 px-4">
+        <button type="button" disabled={saveState === "saving"} onClick={async () => {
+          setSaveState("saving");
+          try { await onSave(); setSaveState("saved"); }
+          catch { setSaveState("error"); }
+        }} className="mr-2 border border-rule px-2 py-1 font-serif text-xs text-accent disabled:opacity-50">
+          {saveState === "saving" ? "保存中" : saveState === "saved" ? "已保存" : saveState === "error" ? "保存失败，重试" : "保存"}
+        </button>
         {artifacts && artifacts.length > 0 ? (
           <div className="flex items-center gap-1 min-w-0 overflow-x-auto py-1">
             {artifacts.map((art) => {
@@ -662,6 +676,7 @@ export function MdCanvas({
             value={doc.content}
             onChange={(e) => {
               onChange(e.target.value);
+              setSaveState("idle");
               setSelectedSnippet(null);
               setPopupPos(null);
             }}

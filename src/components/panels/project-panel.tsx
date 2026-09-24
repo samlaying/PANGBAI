@@ -2,12 +2,12 @@
 
 import { Check, MessageCircle, TriangleAlert } from "lucide-react";
 import type { Project } from "@/lib/types";
-import { ME, personById } from "@/lib/mock-data";
+import type { Person } from "@/lib/types";
 import { useUI } from "../ui-context";
 import { Avatar, SectionTitle, SolidButton, GhostButton } from "../atoms";
 import { PanelBody, PanelFooter, PanelHeader } from "./side-panel";
 
-export function ProjectPanel({ project }: { project: Project }) {
+export function ProjectPanel({ project, people }: { project: Project; people: Person[] }) {
   const ui = useUI();
 
   return (
@@ -105,7 +105,7 @@ export function ProjectPanel({ project }: { project: Project }) {
           <SectionTitle>成员 · WHO IS IN</SectionTitle>
           <div className="flex flex-wrap gap-2.5">
             {project.members.map((id) => {
-              const p = id === "me" ? { ...ME, id: "me" } : personById(id);
+              const p = id === "me" ? { id: "me", char: "我", name: "我" } : people.find((person) => person.id === id);
               if (!p) return null;
               return (
                 <button

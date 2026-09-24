@@ -30,6 +30,7 @@ export interface UIActions {
   /** 确认将 AI 提前提炼的职场记忆存入世界模型人物档案 */
   confirmMemory: (data: {
     personId: string;
+    candidateId?: string;
     pattern: string;
     observation: string;
     confidence: number;

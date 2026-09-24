@@ -3,6 +3,7 @@ import { db } from "@/db/client";
 import { projectArtifacts } from "@/db/schema";
 import { parseFrontmatter } from "@/server/artifacts/frontmatter";
 import { eq } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
 
 export const runtime = "nodejs";
 
@@ -58,7 +59,7 @@ export async function POST(req: NextRequest) {
     const { frontmatter } = parseFrontmatter(content);
     const finalTitle = title || frontmatter.title || filename || "未命名文档";
     const finalDocType = docType || frontmatter.doc_type || frontmatter.type || "prd";
-    const newId = `art_${Date.now()}`;
+    const newId = randomUUID();
 
     await db.insert(projectArtifacts).values({
       id: newId,
@@ -80,7 +81,7 @@ export async function POST(req: NextRequest) {
       frontmatter,
       content,
       version: frontmatter.version || "v1.0",
-    });
+    }, { status: 201 });
   } catch (error) {
     console.error("POST /api/artifacts error:", error);
     return NextResponse.json({ error: "Failed to create artifact" }, { status: 500 });
