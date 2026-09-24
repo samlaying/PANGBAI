@@ -45,7 +45,17 @@ function UserLetter({ msg }: { msg: AgentMessage }) {
   );
 }
 
-function CoachArticle({ msg }: { msg: AgentMessage }) {
+function CoachArticle({
+  msg,
+  isLatest,
+  isTyping,
+}: {
+  msg: AgentMessage;
+  isLatest: boolean;
+  isTyping: boolean;
+}) {
+  const hasParts = msg.parts.length > 0;
+
   return (
     <article>
       <div className="flex items-center gap-3">
@@ -54,9 +64,19 @@ function CoachArticle({ msg }: { msg: AgentMessage }) {
         <span className="font-mono text-[10px] tracking-[0.1em] text-ink-mute">{msg.timestamp}</span>
       </div>
       <div className="mt-4">
-        <AgentRenderer parts={msg.parts} />
+        {hasParts ? (
+          <AgentRenderer parts={msg.parts} />
+        ) : isTyping ? (
+          <div className="mt-5 flex items-center gap-2 font-serif text-[14px] text-ink-mute">
+            正在翻看记录
+            <span className="anim-blink">·</span>
+            <span className="anim-blink [animation-delay:0.3s]">·</span>
+            <span className="anim-blink [animation-delay:0.6s]">·</span>
+          </div>
+        ) : null}
       </div>
-      {msg.parts.length > 0 && <ActionButtons />}
+      {/* 仅在最新一条回复且完全生成完毕（!isTyping）后，展示快捷追问动作栏 */}
+      {hasParts && isLatest && !isTyping && <ActionButtons />}
     </article>
   );
 }
@@ -68,15 +88,35 @@ export function ChatFlow({
   messages: AgentMessage[];
   typing: boolean;
 }) {
+  let lastAssistantIndex = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === "assistant") {
+      lastAssistantIndex = i;
+      break;
+    }
+  }
+
+  // 兜底：如果正在 typing 但列表中尚无 assistant 消息
+  const hasPendingUnplacedAssistant = typing && lastAssistantIndex === -1;
+
   return (
     <div className="mx-auto max-w-[720px] px-6 pb-16 pt-5">
       <div className="space-y-10">
-        {messages.map((msg) => {
+        {messages.map((msg, index) => {
           if (msg.role === "user") return <UserLetter key={msg.id} msg={msg} />;
-          if (msg.role === "assistant") return <CoachArticle key={msg.id} msg={msg} />;
+          if (msg.role === "assistant") {
+            return (
+              <CoachArticle
+                key={msg.id}
+                msg={msg}
+                isLatest={index === lastAssistantIndex}
+                isTyping={typing && index === lastAssistantIndex}
+              />
+            );
+          }
           return null;
         })}
-        {typing && (
+        {hasPendingUnplacedAssistant && (
           <article>
             <div className="flex items-center gap-3">
               <span className="grid size-8 place-items-center border border-ink font-serif text-[15px] font-bold">旁</span>

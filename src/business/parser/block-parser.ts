@@ -26,12 +26,14 @@ export function parseMarkdownToBlocksAndParts(
     normalizedContent = outerCodeMatch[1].trim();
   }
 
-  // 容错规范化：若因模型输出或文本粘连导致段落与 ---### 连在同一行，自动切分换行
+  // 容错规范化：若因模型输出或文本粘连导致段落与 ---### 连在同一行，自动切分换行。
+  // 注意：有序列表 (\d+\.) 前驱字符必须排除 *、_、#、>、` 等 Markdown 控制字符以及空白，
+  // 避免将加粗序号如 "**1. 关键问题**" 错切为 "**" 与 "1. 关键问题"，导致孤立星号与格式错乱。
   normalizedContent = normalizedContent
     .replace(/---+(#{1,3}\s)/g, "\n\n---\n\n$1")
     .replace(/([^\n\r])---+(#{1,3}\s)/g, "$1\n\n---\n\n$2")
-    .replace(/([^#\n\r])(#{1,3}\s[^\n]+)/g, "$1\n\n$2")
-    .replace(/([^\n\r])(\d+\.\s+[^\n]+)/g, "$1\n\n$2");
+    .replace(/([^#\n\r\s])(#{1,3}\s[^\n]+)/g, "$1\n\n$2")
+    .replace(/([^#*_\n\r\s`>])(\*{0,2}\d+\.\s+[^\n]+)/g, "$1\n\n$2");
 
   // 1. 识别结构化 PRD / 方案骨架（含有效 YAML Frontmatter）
   const yamlMatch = normalizedContent.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);

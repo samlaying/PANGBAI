@@ -161,6 +161,11 @@ export function TextPartRenderer({
       continue;
     }
 
+    // 忽略孤立无意义的 Markdown 控制符（如模型偶尔独立成行的 ** 或 *）
+    if (/^\*{1,2}$/.test(trimmed)) {
+      continue;
+    }
+
     // 4. 一级标题 #
     if (trimmed.startsWith("# ")) {
       nodes.push(
@@ -200,8 +205,13 @@ export function TextPartRenderer({
       continue;
     }
 
-    // 7. 有序列表 1. 2.
-    const numMatch = trimmed.match(/^(\d+)\.\s+(.*)$/);
+    // 7. 有序列表 1. 2. 支持普通 "1. xxx" 与加粗形式 "**1. xxx**" 或 "**1. xxx**：..."
+    const boldNumMatch = trimmed.match(/^\*\*(\d+)\.\s*(.*?)\*\*(.*)$/);
+    const standardNumMatch = trimmed.match(/^(\d+)\.\s+(.*)$/);
+    const numMatch = boldNumMatch
+      ? [boldNumMatch[0], boldNumMatch[1], `**${boldNumMatch[2]}**${boldNumMatch[3]}`]
+      : standardNumMatch;
+
     if (numMatch) {
       nodes.push(
         <div

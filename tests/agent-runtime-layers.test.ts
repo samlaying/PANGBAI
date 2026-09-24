@@ -162,6 +162,27 @@ test("parseMarkdownToBlocksAndParts normalizes stuck dividers and headings like 
   assert.match(combined, /2\. 针对延期质疑/);
 });
 
+test("parseMarkdownToBlocksAndParts preserves bold numbered lists and does not tear ** into orphan lines", () => {
+  const content = `好的，给您的核心建议如下：
+**1. 关键问题定位**
+对方的核心顾虑在于资源投入产出比。
+**2. 立即行动建议**
+先提供最小可行范围。
+**3. 长期策略**
+建立定期对齐机制。`;
+
+  const result = parseMarkdownToBlocksAndParts(content);
+  const textParts = result.parts.filter((p) => p.type === "text");
+  const combined = textParts.map((p) => (p.type === "text" ? p.text : "")).join("\n");
+
+  // 不应产生单独成行的孤立星号
+  assert.doesNotMatch(combined, /^\*{1,2}$/m);
+  // 应完整保留 **1. 关键问题定位** 的加粗数字序号
+  assert.match(combined, /\*\*1\.\s*关键问题定位\*\*/);
+  assert.match(combined, /\*\*2\.\s*立即行动建议\*\*/);
+  assert.match(combined, /\*\*3\.\s*长期策略\*\*/);
+});
+
 test("sseTransport streams plain text chunks preserving all newlines and spaces", async () => {
   const { SSETransport } = await import("../src/infra/transport/sse-transport");
   const transport = new SSETransport();
