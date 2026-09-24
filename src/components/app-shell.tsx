@@ -44,12 +44,17 @@ export function AppShell() {
   }, [chat.messages.length, chat.isRunning, chat.activeConvId]);
 
   // 首次进入检测：若尚未初始化【名称、风格、行业】，弹出初始化向导
+  // 用 ref 保证只在 mount 时触发一次，避免 router 引用变化导致无限渲染
+  const hasCheckedOnboarding = useRef(false);
   useEffect(() => {
+    if (hasCheckedOnboarding.current) return;
+    hasCheckedOnboarding.current = true;
     const profile = clientStorage.getItem<{ isInitialized?: boolean } | null>("workspace_profile", null);
     if (!profile || !profile.isInitialized) {
       router.setModal({ type: "onboarding" });
     }
-  }, [router]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const uiActions: UIActions = useMemo(
     () => ({
