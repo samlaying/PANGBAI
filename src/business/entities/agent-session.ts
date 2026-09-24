@@ -84,6 +84,8 @@ export class AgentSession {
         "/api/chat",
         {
           messages: [...history, { role: "user", content: text }],
+          sessionId: this.id,
+          sessionTitle: this.title,
           projectId: options?.projectId || this.projectId,
           activeCanvas: options?.activeCanvas,
           activeProject: options?.activeProject,

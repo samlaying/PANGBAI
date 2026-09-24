@@ -15,9 +15,6 @@ import { PanelBody, PanelFooter, PanelHeader } from "./side-panel";
 export function PersonPanel({ person }: { person: Person }) {
   const ui = useUI();
   const [chainOpen, setChainOpen] = useState(false);
-  const [observation, setObservation] = useState("");
-  const [pattern, setPattern] = useState("");
-  const [memoryError, setMemoryError] = useState("");
 
   return (
     <>
@@ -39,37 +36,24 @@ export function PersonPanel({ person }: { person: Person }) {
       </PanelHeader>
 
       <PanelBody>
-        <form onSubmit={async (event) => {
-          event.preventDefault();
-          try {
-            await ui.confirmMemory({ personId: person.id, observation: observation.trim(), pattern: pattern.trim(), confidence: 80 });
-            setObservation(""); setPattern(""); setMemoryError("");
-          } catch { setMemoryError("保存失败，请重试"); }
-        }} className="space-y-2 border border-rule p-3">
-          <div className="kicker">记录观察 · ADD EVIDENCE</div>
-          <input required aria-label="观察到的事实" value={observation} onChange={(event) => setObservation(event.target.value)} placeholder="观察到的事实" className="w-full border border-rule bg-paper px-2 py-1" />
-          <input required aria-label="行为模式" value={pattern} onChange={(event) => setPattern(event.target.value)} placeholder="可能的行为模式" className="w-full border border-rule bg-paper px-2 py-1" />
-          <button type="submit" className="border border-accent px-3 py-1 text-accent">确认存入</button>
-          {memoryError && <p role="alert" className="text-vermilion">{memoryError}</p>}
-        </form>
         {/* AI 学到的 */}
         <section className="space-y-5">
           <SectionTitle>AI 学到的 · PATTERNS</SectionTitle>
           {person.patterns.map((p) => (
-            <div key={p.pattern} className="space-y-1.5">
+            <div key={p.pattern} className="space-y-1.5 transition-all">
               <div className="flex items-baseline justify-between gap-3">
-                <span className="font-serif text-[15px] font-semibold">
+                <span className="font-serif text-[15px] font-semibold text-ink">
                   {p.pattern}
                 </span>
-                <span className="font-display text-[22px] font-semibold leading-none text-accent">
+                <span className="font-display text-[24px] font-semibold leading-none text-accent">
                   {p.confidence}
-                  <span className="text-[12px]">%</span>
+                  <span className="text-[13px]">%</span>
                 </span>
               </div>
               <div className="flex items-center gap-3">
                 <DotMeter value={p.confidence} />
-                <span className="font-mono text-[10px] tracking-[0.08em] text-ink-mute">
-                  {p.evidenceCount} 条证据 · 上次观察 {p.lastObserved}
+                <span className="font-mono text-[10.5px] tracking-[0.06em] text-ink-mute">
+                  {p.evidenceCount} 条证据 · 上次观察 {p.lastObserved || "刚刚"}
                 </span>
               </div>
             </div>
