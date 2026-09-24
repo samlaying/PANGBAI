@@ -1,6 +1,6 @@
 import { db } from "@/db/client";
-import { people, personModels, projects, projectArtifacts } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { people, personModels, projects, projectArtifacts, evidence } from "@/db/schema";
+import { eq, inArray } from "drizzle-orm";
 
 export interface ActiveCanvasContext {
   id?: string;
@@ -11,6 +11,7 @@ export interface ActiveCanvasContext {
 
 export interface AssembleContextOptions {
   projectId?: string;
+  focusedPersonId?: string;
   activeCanvas?: ActiveCanvasContext | null;
 }
 
@@ -36,23 +37,51 @@ const COACH_BASE_PHILOSOPHY = `你是「旁白」，一位清醒、真诚、懂�
    ## 4. 风险排查与 Plan B 兜底策略
 3. 【常规排版】：
    - 对话区就是 Markdown 渲染区。严禁将整个回复或框架包裹在 \`\`\`markdown 代码块中输出！直接使用自然段落、有序列表（1. 2.）、圆点列表（•）与加粗。
-4. 【实体引用】：
-   - 引用真实世界模型中的人物或项目时，使用标准超链接语法 [姓名](person:ID)。`;
+4. 【实体引用与因果溯源（关键！）】：
+   - 引用真实世界模型中的人物时，必须使用标准超链接语法 [姓名](person:ID)，如 [李雷](person:user_id)。
+   - 当分析某人言行并发现历史上有过类似事件时，你必须主动引用真实历史证据：
+     * [具体事件或时间描述](evidence:ID)，例如 [7月8日也发生过一次](evidence:ev_004)
+     * 关联证据卡片行：关联证据 EVIDENCE · {序号} {人物名} · {行为模式关键词} · {置信度}%
+   - 这样用户点击超链接即可穿透查看你做出该推断的前因后果与事实证据。`;
 
 /**
  * 动态组装 Coach Agent 的 System Prompt，打通真实数据库世界模型与 Canvas 实时工作区
  */
 export async function assembleCoachContext(options: AssembleContextOptions = {}): Promise<string> {
-  const { projectId, activeCanvas } = options;
+  const { projectId, focusedPersonId, activeCanvas } = options;
 
   let prompt = COACH_BASE_PHILOSOPHY;
 
-  // 1. 从真实数据库提取核心干系人世界模型
+  // 1. 项目级干系人与因果历史按需 JIT 供给 (只加载与本上下文相关的干系人)
   try {
-    const allPeople = await db.select().from(people);
-    if (allPeople.length > 0) {
-      prompt += `\n\n【已掌握的职场世界模型】:`;
-      for (const p of allPeople) {
+    let targetPeopleIds: string[] = [];
+
+    if (projectId) {
+      const pList = await db.select().from(projects).where(eq(projects.id, projectId)).limit(1);
+      if (pList.length > 0 && pList[0].stakeholdersJson) {
+        try {
+          const parsed = JSON.parse(pList[0].stakeholdersJson);
+          if (Array.isArray(parsed)) {
+            targetPeopleIds = parsed.map((m: { id?: string }) => m.id).filter(Boolean) as string[];
+          }
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    if (focusedPersonId && !targetPeopleIds.includes(focusedPersonId)) {
+      targetPeopleIds.push(focusedPersonId);
+    }
+
+    // 根据靶向 ID 检索干系人；若无指定靶向，兜底加载前 6 位，绝不无节制全量倾倒
+    const relevantPeople = targetPeopleIds.length > 0
+      ? await db.select().from(people).where(inArray(people.id, targetPeopleIds))
+      : await db.select().from(people).limit(6);
+
+    if (relevantPeople.length > 0) {
+      prompt += `\n\n【涉事核心干系人与行为心理模型】:`;
+      for (const p of relevantPeople) {
         const models = await db
           .select()
           .from(personModels)
@@ -62,7 +91,21 @@ export async function assembleCoachContext(options: AssembleContextOptions = {})
           .map((m) => `${m.pattern} (置信度 ${Math.round(m.confidence * 100)}%)`)
           .join("； ");
 
-        prompt += `\n- [${p.name}](person:${p.id})：${p.role} · ${p.department || "部门"}。关系：${p.relationshipTone || "协同"}。已归纳行为模式：${patternsStr || "正在持续观察中"}。导师备忘：${p.advice || "无"}`;
+        prompt += `\n- [${p.name}](person:${p.id})：${p.role} · ${p.department || "部门"}。关系：${p.relationshipTone || "协同"}。已归纳行为模式：${patternsStr || "持续观察中"}。备忘：${p.advice || "无"}`;
+
+        // 提取该干系人最近 3 条带因果归因的证据链
+        const personEvidence = await db
+          .select()
+          .from(evidence)
+          .where(eq(evidence.personId, p.id))
+          .limit(3);
+
+        if (personEvidence.length > 0) {
+          prompt += `\n  历史因果证据（可供你在回复中以 [描述](evidence:ID) 格式引用）：`;
+          for (const ev of personEvidence) {
+            prompt += `\n  * 证据 [${ev.id}] (${ev.dateStr || "近期"}·${ev.source})：${ev.observation}${ev.rationale ? ` [心理归因: ${ev.rationale}]` : ""}`;
+          }
+        }
       }
     }
   } catch (err) {
@@ -120,13 +163,25 @@ export async function assembleCoachContext(options: AssembleContextOptions = {})
 
   // 3. 动态挂载当前用户正在 Canvas 中编辑的工作文档 (Working Document Context)
   if (activeCanvas && activeCanvas.content) {
+    // 提取标题大纲 (TOC) 以便极低 Token 消耗掌握全局
+    const toc = activeCanvas.content
+      .split("\n")
+      .filter((line) => /^#{1,3}\s/.test(line))
+      .slice(0, 10)
+      .join("\n");
+
+    const contentSnippet = activeCanvas.content.length > 3000
+      ? activeCanvas.content.slice(0, 3000) + "\n\n... (后续章节通过大纲引用)"
+      : activeCanvas.content;
+
     prompt += `\n\n【当前用户正在编辑的工作文档 Canvas】:
 文档名称: ${activeCanvas.title || "未命名文档"}
-文档内容:
+${toc ? `文档大纲目录 (TOC):\n${toc}\n` : ""}
+文档内容切片:
 \`\`\`markdown
-${activeCanvas.content}
+${contentSnippet}
 \`\`\`
-重要注意：用户当前正与你在该文档旁边双线协作。若用户询问关于 PRD、方案、排期、技术取舍等问题，请结合该文档的具体内容提出规避冲突、方案取舍、排期同步的专业建议！`;
+重要注意：用户正与你在该文档旁边双线协作。若涉及方案修改或排期确认，请基于该文档提出具体破局与修改建议！`;
   }
 
   return prompt;

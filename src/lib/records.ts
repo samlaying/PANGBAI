@@ -33,18 +33,19 @@ export function mapPerson(value: unknown): Person {
     }),
     evidence: array(p.evidence).map((raw) => {
       const e = object(raw);
-      const observation = string(e.text);
+      const observation = string(e.text || e.observation);
+      const rationale = string(e.rationale);
       return {
         id: string(e.id),
-        date: string(e.date),
+        date: string(e.date || e.dateStr),
         scene: string(e.source),
         source: string(e.source),
         person: name,
-        project: "",
-        record: observation,
+        project: string(e.projectId || "当前聚焦项目"),
+        record: rationale ? `${observation}（推断动机：${rationale}）` : observation,
         observation,
-        pattern: "",
-        patternConfidence: 0,
+        pattern: string(e.inferredPattern || e.pattern),
+        patternConfidence: number(e.confidence || e.patternConfidence, 85),
       };
     }),
   };

@@ -33,6 +33,10 @@ export async function getPeopleWithDetails() {
         date: e.dateStr || "近期",
         source: e.source,
         text: e.observation,
+        observation: e.observation,
+        rationale: e.rationale,
+        projectId: e.projectId,
+        inferredPatternId: e.inferredPatternId,
       })),
     });
   }
@@ -70,6 +74,10 @@ export async function getPersonById(personId: string) {
       date: e.dateStr || "近期",
       source: e.source,
       text: e.observation,
+      observation: e.observation,
+      rationale: e.rationale,
+      projectId: e.projectId,
+      inferredPatternId: e.inferredPatternId,
     })),
   };
 }
@@ -77,7 +85,9 @@ export async function getPersonById(personId: string) {
 export interface ConfirmMemoryInput {
   personId: string;
   candidateId?: string;
+  projectId?: string;
   observation: string;
+  rationale?: string;
   inferredPattern: string;
   confidence: number; // 0.0 - 1.0 或 0 - 100
   source?: string;
@@ -87,7 +97,7 @@ export interface ConfirmMemoryInput {
  * 人机协同单键沉淀：将 AI 预填的候选规律与证据原子化落入数据库
  */
 export async function confirmMemoryToDatabase(input: ConfirmMemoryInput) {
-  const { personId, candidateId, observation, inferredPattern, source = "对话提炼沉淀" } = input;
+  const { personId, candidateId, projectId, observation, rationale, inferredPattern, source = "对话提炼沉淀" } = input;
   const rawConfidence = Number(input.confidence > 1 ? input.confidence / 100 : input.confidence);
   if (!personId || !observation.trim() || !inferredPattern.trim() || !Number.isFinite(rawConfidence) || rawConfidence < 0 || rawConfidence > 1) {
     throw new Error("Invalid memory confirmation");
@@ -115,9 +125,11 @@ export async function confirmMemoryToDatabase(input: ConfirmMemoryInput) {
     await tx.insert(evidence).values({
       id: randomUUID(),
       personId,
+      projectId,
       observation: observation.trim(),
+      rationale,
       source,
-      dateStr: new Date().toISOString(),
+      dateStr: "刚刚",
     });
 
     const existingModels = await tx
@@ -137,7 +149,7 @@ export async function confirmMemoryToDatabase(input: ConfirmMemoryInput) {
         .set({
           confidence: Math.min(0.98, Math.max(existing.confidence, rawConfidence) + 0.03),
           evidenceCount: existing.evidenceCount + 1,
-          lastObservedAt: new Date().toISOString(),
+          lastObservedAt: "刚刚",
         })
         .where(eq(personModels.id, existing.id));
     } else {
