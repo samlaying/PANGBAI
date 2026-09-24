@@ -1,6 +1,12 @@
 import { agentBus } from "../bus/agent-bus";
 import { workspaceManager } from "./workspace-manager";
-import type { CanvasDoc } from "@/components/canvas/md-canvas";
+
+export interface CanvasDoc {
+  id: string;
+  title: string;
+  content: string;
+  updatedAt: string;
+}
 
 /**
  * CanvasDocument
@@ -10,9 +16,22 @@ export class CanvasDocumentManager {
   public currentDoc: CanvasDoc | null = null;
   public activeProjectId?: string;
 
+  constructor() {
+    agentBus.on("canvas_open_requested", (request) => {
+      this.currentDoc = {
+        id: crypto.randomUUID(),
+        title: request.title,
+        content: request.content,
+        updatedAt: "刚刚",
+      };
+      this.activeProjectId = request.projectId;
+      this.notify("doc_opened", this.currentDoc);
+    });
+  }
+
   openDoc(doc: CanvasDoc, projectId?: string): void {
     this.currentDoc = doc;
-    if (projectId) this.activeProjectId = projectId;
+    this.activeProjectId = projectId;
     this.notify("doc_opened", this.currentDoc);
   }
 
@@ -23,7 +42,7 @@ export class CanvasDocumentManager {
       content: `# ${title}\n`,
       updatedAt: "刚刚",
     };
-    if (projectId) this.activeProjectId = projectId;
+    this.activeProjectId = projectId;
     this.notify("doc_opened", this.currentDoc);
   }
 
@@ -42,21 +61,28 @@ export class CanvasDocumentManager {
     if (!this.activeProjectId) {
       throw new Error("请先选择关联项目后再保存产物");
     }
+    const doc = this.currentDoc;
+    const projectId = this.activeProjectId;
 
+    const isPersisted = workspaceManager.projects.some(
+      (project) => project.id === projectId && project.artifacts?.some((artifact) => artifact.id === doc.id),
+    );
     const artifact = await workspaceManager.saveArtifact({
-      id: this.currentDoc.id,
-      projectId: this.activeProjectId,
-      title: this.currentDoc.title,
-      content: this.currentDoc.content,
+      id: isPersisted ? doc.id : undefined,
+      projectId,
+      title: doc.title,
+      content: doc.content,
     });
 
-    this.currentDoc = {
-      ...this.currentDoc,
-      id: artifact.id,
-      title: artifact.title,
-      updatedAt: artifact.updatedAt,
-    };
-    this.notify("doc_saved", this.currentDoc);
+    if (this.currentDoc?.id === doc.id) {
+      this.currentDoc = {
+        ...this.currentDoc,
+        id: artifact.id,
+        title: artifact.title,
+        updatedAt: artifact.updatedAt,
+      };
+      this.notify("doc_saved", this.currentDoc);
+    }
   }
 
   closeDoc(): void {

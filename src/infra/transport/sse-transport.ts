@@ -61,6 +61,9 @@ export class SSETransport {
         }
       }
 
+      // Flush any incomplete UTF-8 code point retained by TextDecoder.
+      buffer += decoder.decode();
+
       // 处理流结束前残余的 buffer
       if (buffer.trim()) {
         this.parseAndDispatchSSEBlock(buffer.trim(), onEvent);

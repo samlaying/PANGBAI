@@ -1,9 +1,8 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { canvasDocumentManager } from "@/business/entities/canvas-document";
+import { canvasDocumentManager, type CanvasDoc } from "@/business/entities/canvas-document";
 import { agentBus } from "@/business/bus/agent-bus";
-import type { CanvasDoc } from "@/components/canvas/md-canvas";
 
 /**
  * useCanvas
@@ -23,12 +22,12 @@ export function useCanvas(projectId?: string) {
     return unsub;
   }, []);
 
-  const openDoc = useCallback((doc: CanvasDoc) => {
-    canvasDocumentManager.openDoc(doc, projectId);
+  const openDoc = useCallback((doc: CanvasDoc, targetProjectId?: string) => {
+    canvasDocumentManager.openDoc(doc, targetProjectId ?? projectId);
   }, [projectId]);
 
-  const createDraft = useCallback((title?: string) => {
-    canvasDocumentManager.createDraft(title, projectId);
+  const createDraft = useCallback((title?: string, targetProjectId?: string) => {
+    canvasDocumentManager.createDraft(title, targetProjectId ?? projectId);
   }, [projectId]);
 
   const updateContent = useCallback((content: string) => {

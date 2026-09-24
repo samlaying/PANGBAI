@@ -12,10 +12,10 @@ export function useWorkspace() {
   const [, setTick] = useState(0);
 
   useEffect(() => {
-    void workspaceManager.init();
     const unsub = agentBus.on("workspace_changed", () => {
       setTick((t) => t + 1);
     });
+    void workspaceManager.init();
     return unsub;
   }, []);
 

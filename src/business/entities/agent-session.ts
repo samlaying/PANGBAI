@@ -26,6 +26,7 @@ export class AgentSession {
   public messages: AgentMessage[] = [];
   public isRunning: boolean = false;
   private rawAccumulator: string = "";
+  private pendingArtifactDoc?: { title: string; content: string; type: import("@/lib/types").ArtifactType };
 
   constructor(id: string, title = "新的对话", projectId?: string) {
     this.id = id;
@@ -43,6 +44,7 @@ export class AgentSession {
     if (this.isRunning) return;
     this.isRunning = true;
     this.rawAccumulator = "";
+    this.pendingArtifactDoc = undefined;
 
     // 1. 追加用户消息
     const userMsg: AgentMessage = {
@@ -68,7 +70,9 @@ export class AgentSession {
     this.notify("message_added", assistantMsg);
 
     try {
-      const history = this.messages.slice(0, -1).map((m) => {
+      // 当前用户消息和 assistant 占位都已加入列表，先移除这两条，
+      // 再在请求末尾单独追加当前输入，避免重复发送。
+      const history = this.messages.slice(0, -2).map((m) => {
         const textPart = m.parts.find((p) => p.type === "text");
         return {
           role: m.role,
@@ -97,9 +101,23 @@ export class AgentSession {
       });
       this.notify("error", error);
     } finally {
+      this.flushPendingArtifactDoc(options?.projectId || this.projectId);
       this.isRunning = false;
       this.notify("run_finished", { sessionId: this.id });
     }
+  }
+
+  private flushPendingArtifactDoc(projectId?: string): void {
+    const artifactDoc = this.pendingArtifactDoc as
+      | { title: string; content: string; type: import("@/lib/types").ArtifactType }
+      | undefined;
+    if (!artifactDoc) return;
+    this.pendingArtifactDoc = undefined;
+    agentBus.dispatch("canvas_open_requested", {
+      title: artifactDoc.title,
+      content: artifactDoc.content,
+      projectId,
+    });
   }
 
   /**
@@ -110,17 +128,11 @@ export class AgentSession {
       case "message.delta": {
         this.rawAccumulator += event.delta;
         const { parts, artifactDoc } = parseMarkdownToBlocksAndParts(this.rawAccumulator);
+        if (artifactDoc) this.pendingArtifactDoc = artifactDoc;
 
         // 保留已有的 tool / candidate 等特殊 parts
         const specialParts = msg.parts.filter((p) => p.type !== "text" && p.type !== "artifact");
         msg.parts = [...specialParts, ...parts];
-
-        if (artifactDoc) {
-          agentBus.dispatch("canvas_changed", {
-            action: "doc_opened",
-            payload: artifactDoc,
-          });
-        }
 
         this.notify("part_updated", { messageId: msg.id, parts: msg.parts });
         break;
@@ -172,9 +184,10 @@ export class AgentSession {
         };
         msg.parts.push(artPart);
         this.notify("part_added", { messageId: msg.id, part: artPart });
-        agentBus.dispatch("canvas_changed", {
-          action: "doc_opened",
-          payload: { title: event.title, content: event.content, type: event.artifactType },
+        agentBus.dispatch("canvas_open_requested", {
+          title: event.title,
+          content: event.content,
+          projectId: this.projectId,
         });
         break;
       }
@@ -182,7 +195,7 @@ export class AgentSession {
       case "memory.candidate": {
         const memPart: MessagePart = {
           type: "memory_candidate",
-          candidateId: event.candidateId,
+          candidateId: event.candidateId || crypto.randomUUID(),
           personId: event.personId,
           personName: event.personName,
           pattern: event.pattern,
@@ -258,7 +271,7 @@ export class AgentSession {
         } else if (p.type === "memory_candidate") {
           blocks.push({
             kind: "memory_candidate",
-            candidateId: p.candidateId || crypto.randomUUID(),
+            candidateId: p.candidateId || `${m.id}-memory-${m.parts.indexOf(p)}`,
             personId: p.personId,
             personName: p.personName,
             pattern: p.pattern,

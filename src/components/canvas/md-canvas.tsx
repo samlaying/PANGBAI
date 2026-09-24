@@ -15,13 +15,7 @@ import {
   X,
 } from "lucide-react";
 import type { ProjectArtifact } from "@/lib/types";
-
-export interface CanvasDoc {
-  id: string;
-  title: string;
-  content: string;
-  updatedAt: string;
-}
+import type { CanvasDoc } from "@/business/entities/canvas-document";
 
 function parseDocContent(raw: string) {
   const match = raw.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
@@ -673,6 +667,7 @@ export function MdCanvas({
         ) : (
           <textarea
             ref={textareaRef}
+            disabled={saveState === "saving"}
             value={doc.content}
             onChange={(e) => {
               onChange(e.target.value);

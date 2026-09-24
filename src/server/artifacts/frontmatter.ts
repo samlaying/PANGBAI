@@ -68,4 +68,3 @@ export function stringifyFrontmatter(
   const yamlStr = dump(frontmatter, { indent: 2 }).trim();
   return `---\n${yamlStr}\n---\n\n${content.trim()}\n`;
 }
-

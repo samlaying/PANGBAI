@@ -49,9 +49,9 @@ export function AppShell() {
       openProjectDocs: (projectId) => {
         const p = workspace.projects.find((x) => x.id === projectId);
         if (p?.artifacts?.[0]) {
-          canvas.openDoc(p.artifacts[0]);
+          canvas.openDoc(p.artifacts[0], projectId);
         } else {
-          canvas.createDraft("项目活文档.md");
+          canvas.createDraft("项目活文档.md", projectId);
         }
       },
       openMeeting: () => router.setPanel({ type: "meeting" }),

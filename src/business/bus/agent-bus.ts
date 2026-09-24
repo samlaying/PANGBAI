@@ -19,6 +19,11 @@ export type BusEventMap = {
     action: "doc_opened" | "doc_updated" | "doc_closed" | "doc_saved";
     payload?: unknown;
   };
+  canvas_open_requested: {
+    title: string;
+    content: string;
+    projectId?: string;
+  };
   overlay_requested: {
     type: "person" | "project" | "evidence" | "growth" | "meeting" | "settings";
     id?: string;
