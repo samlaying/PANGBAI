@@ -1,7 +1,6 @@
 import { db } from "@/db/client";
-import { people, personModels, evidence } from "@/db/schema";
+import { people, personModels, evidence, memoryCandidates } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
-import { sqlite } from "@/db/client";
 import { randomUUID } from "node:crypto";
 
 export async function getPeopleWithDetails() {
@@ -94,33 +93,69 @@ export async function confirmMemoryToDatabase(input: ConfirmMemoryInput) {
     throw new Error("Invalid memory confirmation");
   }
 
-  sqlite.transaction(() => {
-    const person = sqlite.prepare("SELECT id FROM people WHERE id = ?").get(personId);
-    if (!person) throw new Error("Person not found");
+  await db.transaction(async (tx) => {
+    const p = await tx.select({ id: people.id }).from(people).where(eq(people.id, personId)).limit(1);
+    if (!p || p.length === 0) throw new Error("Person not found");
 
     if (candidateId) {
-      const candidate = sqlite.prepare("SELECT status FROM memory_candidates WHERE id = ? AND person_id = ?")
-        .get(candidateId, personId) as { status: string } | undefined;
+      const candidates = await tx
+        .select({ status: memoryCandidates.status })
+        .from(memoryCandidates)
+        .where(eq(memoryCandidates.id, candidateId))
+        .limit(1);
+      const candidate = candidates[0];
       if (!candidate || candidate.status === "ignored") throw new Error("Memory candidate not found or ignored");
       if (candidate.status === "confirmed") return;
-      const result = sqlite.prepare("UPDATE memory_candidates SET status = 'confirmed' WHERE id = ? AND person_id = ? AND status = 'pending'")
-        .run(candidateId, personId);
-      if (result.changes === 0) throw new Error("Memory candidate is not pending");
+      await tx
+        .update(memoryCandidates)
+        .set({ status: "confirmed" })
+        .where(eq(memoryCandidates.id, candidateId));
     }
 
-    sqlite.prepare("INSERT INTO evidence (id, person_id, observation, source, date_str) VALUES (?, ?, ?, ?, ?)")
-      .run(randomUUID(), personId, observation.trim(), source, new Date().toISOString());
-    const existing = sqlite.prepare("SELECT id, confidence, evidence_count FROM person_models WHERE person_id = ? AND pattern = ?")
-      .get(personId, inferredPattern.trim()) as { id: string; confidence: number; evidence_count: number } | undefined;
+    await tx.insert(evidence).values({
+      id: randomUUID(),
+      personId,
+      observation: observation.trim(),
+      source,
+      dateStr: new Date().toISOString(),
+    });
+
+    const existingModels = await tx
+      .select({
+        id: personModels.id,
+        confidence: personModels.confidence,
+        evidenceCount: personModels.evidenceCount,
+        pattern: personModels.pattern,
+      })
+      .from(personModels)
+      .where(eq(personModels.personId, personId));
+    const existing = existingModels.find((m) => m.pattern === inferredPattern.trim());
+
     if (existing) {
-      sqlite.prepare("UPDATE person_models SET confidence = ?, evidence_count = ?, last_observed_at = ? WHERE id = ?")
-        .run(Math.min(0.98, Math.max(existing.confidence, rawConfidence) + 0.03), existing.evidence_count + 1, new Date().toISOString(), existing.id);
+      await tx
+        .update(personModels)
+        .set({
+          confidence: Math.min(0.98, Math.max(existing.confidence, rawConfidence) + 0.03),
+          evidenceCount: existing.evidenceCount + 1,
+          lastObservedAt: new Date().toISOString(),
+        })
+        .where(eq(personModels.id, existing.id));
     } else {
-      sqlite.prepare("INSERT INTO person_models (id, person_id, pattern, confidence, evidence_count, last_observed_at) VALUES (?, ?, ?, ?, 1, ?)")
-        .run(randomUUID(), personId, inferredPattern.trim(), rawConfidence, new Date().toISOString());
+      await tx.insert(personModels).values({
+        id: randomUUID(),
+        personId,
+        pattern: inferredPattern.trim(),
+        confidence: rawConfidence,
+        evidenceCount: 1,
+        lastObservedAt: new Date().toISOString(),
+      });
     }
-    sqlite.prepare("UPDATE people SET updated_at = ? WHERE id = ?").run(new Date().toISOString(), personId);
-  })();
+
+    await tx
+      .update(people)
+      .set({ updatedAt: new Date().toISOString() })
+      .where(eq(people.id, personId));
+  });
 
   return getPersonById(personId);
 }

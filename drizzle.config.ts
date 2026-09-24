@@ -3,8 +3,8 @@ import { defineConfig } from "drizzle-kit";
 export default defineConfig({
   schema: "./src/db/schema/index.ts",
   out: "./src/db/migrations",
-  dialect: "sqlite",
+  dialect: "postgresql",
   dbCredentials: {
-    url: "./.data/pangbai.db",
+    url: process.env.DATABASE_URL || process.env.DIRECT_URL || "",
   },
 });

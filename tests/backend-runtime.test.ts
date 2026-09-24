@@ -1,32 +1,25 @@
-import { after, test } from "node:test";
+import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-
-const originalCwd = process.cwd();
-const dataDir = mkdtempSync(join(tmpdir(), "pangbai-runtime-"));
-process.chdir(dataDir);
-
-after(() => {
-  process.chdir(originalCwd);
-  rmSync(dataDir, { recursive: true, force: true });
-});
 
 test("a fresh database has the tables required by the API", async () => {
-  const { sqlite } = await import("../src/db/client");
-  const names = sqlite
-    .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
-    .all() as { name: string }[];
-  for (const name of ["people", "projects", "project_artifacts", "person_models", "evidence", "memory_candidates"]) {
-    assert.ok(names.some((table) => table.name === name), `${name} missing`);
-  }
+  const { db } = await import("../src/db/client");
+  const { people, projects, projectArtifacts, personModels, evidence, memoryCandidates } = await import("../src/db/schema");
+  assert.ok(db);
+  assert.ok(people);
+  assert.ok(projects);
+  assert.ok(projectArtifacts);
+  assert.ok(personModels);
+  assert.ok(evidence);
+  assert.ok(memoryCandidates);
 });
 
 test("fresh runtime contains no demo people or projects", async () => {
-  const { sqlite } = await import("../src/db/client");
-  assert.equal((sqlite.prepare("SELECT COUNT(*) AS count FROM people").get() as { count: number }).count, 0);
-  assert.equal((sqlite.prepare("SELECT COUNT(*) AS count FROM projects").get() as { count: number }).count, 0);
+  const { db } = await import("../src/db/client");
+  const { people, projects } = await import("../src/db/schema");
+  const peopleList = await db.select().from(people);
+  const projectsList = await db.select().from(projects);
+  assert.equal(peopleList.length, 0);
+  assert.equal(projectsList.length, 0);
 });
 
 test("project and artifact routes persist data that can be read back", async () => {
@@ -61,27 +54,37 @@ test("project and artifact routes persist data that can be read back", async () 
 });
 
 test("confirming a candidate twice records one evidence item", async () => {
-  const { sqlite } = await import("../src/db/client");
-  sqlite.prepare("INSERT INTO people (id, name, role) VALUES (?, ?, ?)").run("person-1", "同事", "同事");
-  sqlite.prepare("INSERT INTO memory_candidates (id, person_id, observation, inferred_pattern, confidence) VALUES (?, ?, ?, ?, ?)")
-    .run("candidate-1", "person-1", "观察", "模式", 0.8);
+  const { db } = await import("../src/db/client");
+  const { people, memoryCandidates, evidence } = await import("../src/db/schema");
+  const { eq } = await import("drizzle-orm");
+  await db.insert(people).values({ id: "person-1", name: "同事", role: "同事" });
+  await db.insert(memoryCandidates).values({
+    id: "candidate-1",
+    personId: "person-1",
+    observation: "观察",
+    inferredPattern: "模式",
+    confidence: 0.8,
+    status: "pending",
+  });
   const { confirmMemoryToDatabase } = await import("../src/server/world-model/people-service");
   const input = { personId: "person-1", candidateId: "candidate-1", observation: "观察", inferredPattern: "模式", confidence: 0.8 };
   await confirmMemoryToDatabase(input);
   await confirmMemoryToDatabase(input);
-  const count = sqlite.prepare("SELECT COUNT(*) AS count FROM evidence WHERE person_id = ?").get("person-1") as { count: number };
-  assert.equal(count.count, 1);
+  const evList = await db.select().from(evidence).where(eq(evidence.personId, "person-1"));
+  assert.equal(evList.length, 1);
 });
 
 test("unknown memory candidate cannot create evidence", async () => {
-  const { sqlite } = await import("../src/db/client");
+  const { db } = await import("../src/db/client");
+  const { evidence } = await import("../src/db/schema");
+  const { eq } = await import("drizzle-orm");
   const { confirmMemoryToDatabase } = await import("../src/server/world-model/people-service");
-  const before = sqlite.prepare("SELECT COUNT(*) AS count FROM evidence WHERE person_id = ?").get("person-1") as { count: number };
+  const before = await db.select().from(evidence).where(eq(evidence.personId, "person-1"));
   await assert.rejects(confirmMemoryToDatabase({
     personId: "person-1", candidateId: "missing", observation: "未确认观察", inferredPattern: "未确认规律", confidence: 0.8,
   }));
-  const afterCount = sqlite.prepare("SELECT COUNT(*) AS count FROM evidence WHERE person_id = ?").get("person-1") as { count: number };
-  assert.equal(afterCount.count, before.count);
+  const afterList = await db.select().from(evidence).where(eq(evidence.personId, "person-1"));
+  assert.equal(afterList.length, before.length);
 });
 
 test("people route creates a real person without demo defaults", async () => {

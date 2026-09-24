@@ -1,8 +1,7 @@
-import { sqliteTable, text, real } from "drizzle-orm/sqlite-core";
-import { sql } from "drizzle-orm";
+import { pgTable, text, real, timestamp } from "drizzle-orm/pg-core";
 import { people } from "./people";
 
-export const memoryCandidates = sqliteTable("memory_candidates", {
+export const memoryCandidates = pgTable("memory_candidates", {
   id: text("id").primaryKey(),                     // 如 "cand_123"
   conversationId: text("conversation_id"),
   personId: text("person_id").notNull().references(() => people.id, { onDelete: "cascade" }),
@@ -11,5 +10,5 @@ export const memoryCandidates = sqliteTable("memory_candidates", {
   confidence: real("confidence").notNull(),        // 置信度 (0.0 ~ 1.0)
   rationale: text("rationale"),                    // 判定理由
   status: text("status").notNull().default("pending"), // "pending" | "confirmed" | "dismissed"
-  createdAt: text("created_at").default(sql`CURRENT_TIMESTAMP`),
+  createdAt: timestamp("created_at", { mode: "string", withTimezone: true }).defaultNow(),
 });
