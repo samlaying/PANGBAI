@@ -3,6 +3,7 @@ import { sseTransport } from "@/infra/transport/sse-transport";
 import type { AgentEvent } from "@/infra/transport/agent-protocol";
 import type { AgentMessage, MessagePart } from "./message-part";
 import { parseMarkdownToBlocksAndParts } from "../parser/block-parser";
+import { workspaceManager } from "./workspace-manager";
 import type { Block, ChatMessage, Conversation, Project } from "@/lib/types";
 
 export interface SendChatOptions {
@@ -106,6 +107,7 @@ export class AgentSession {
       this.flushPendingArtifactDoc(options?.projectId || this.projectId);
       this.isRunning = false;
       this.notify("run_finished", { sessionId: this.id });
+      void workspaceManager.refreshPeople();
     }
   }
 

@@ -31,6 +31,26 @@ export class WorkspaceManager {
     }
   }
 
+  async refreshPeople(): Promise<void> {
+    try {
+      const people = await workspaceApi.getPeople();
+      this.people = people;
+      this.notify("people_updated", this.people);
+    } catch (error) {
+      console.error("WorkspaceManager refreshPeople failed:", error);
+    }
+  }
+
+  async refreshProjects(): Promise<void> {
+    try {
+      const projects = await workspaceApi.getProjects();
+      this.projects = projects;
+      this.notify("projects_updated", this.projects);
+    } catch (error) {
+      console.error("WorkspaceManager refreshProjects failed:", error);
+    }
+  }
+
   async addPerson(params: CreatePersonParams): Promise<Person> {
     const person = await workspaceApi.createPerson(params);
     this.people = [...this.people, person];
