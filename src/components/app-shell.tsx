@@ -16,7 +16,7 @@ import { useCanvas } from "@/hooks/use-canvas";
 import { useOverlayRouter } from "@/hooks/use-overlay-router";
 import { clientStorage } from "@/infra/storage/client-storage";
 
-export function AppShell() {
+export function AppShell({ initialPrompt }: { initialPrompt?: string } = {}) {
   const router = useOverlayRouter();
   const workspace = useWorkspace();
   const chat = useAgentSession();
@@ -29,7 +29,7 @@ export function AppShell() {
 
   const canvas = useCanvas(activeProject?.id);
 
-  const [prefill, setPrefill] = useState({ text: "", n: 0 });
+  const [prefill, setPrefill] = useState({ text: initialPrompt || "", n: initialPrompt ? 1 : 0 });
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const ask = useCallback((text: string) => {
