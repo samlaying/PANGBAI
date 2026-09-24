@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --import tsx --test tests/*.test.ts"
+    "test": "node --import tsx --test tests/*.test.ts",
+    "db:init": "node --import tsx -e 'import(\"./src/db/client.ts\")'",
+    "db:reset": "rm -f .data/pangbai.db* && node --import tsx -e 'import(\"./src/db/client.ts\")'"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",
