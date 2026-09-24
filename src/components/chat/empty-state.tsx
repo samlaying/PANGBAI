@@ -1,42 +1,10 @@
 "use client";
 
-import {
-  CalendarCheck,
-  FolderPlus,
-  MessagesSquare,
-  NotebookPen,
-} from "lucide-react";
 import { useUI } from "../ui-context";
+import { PROMPT_TEMPLATES } from "@/config/prompt-templates";
 
 export function EmptyState() {
   const ui = useUI();
-
-  const suggestions = [
-    {
-      icon: NotebookPen,
-      title: "记录今天的一件事",
-      sub: "会后、群聊、一次不愉快——都值得记",
-      onClick: () => ui.ask("今天想跟你说件事："),
-    },
-    {
-      icon: CalendarCheck,
-      title: "有个会要准备",
-      sub: "旁白按参会人画像帮你备会",
-      onClick: () => ui.ask("明天有个会要开，帮我准备一下："),
-    },
-    {
-      icon: MessagesSquare,
-      title: "有句话不会回",
-      sub: "贴出对话，旁白帮你斟酌措辞",
-      onClick: () => ui.ask("有句话不知道怎么回："),
-    },
-    {
-      icon: FolderPlus,
-      title: "新建项目档案",
-      sub: "开一个新项目的观察记录",
-      onClick: ui.createProject,
-    },
-  ];
 
   return (
     <div className="mx-auto flex h-full max-w-[620px] flex-col justify-center px-6 py-4">
@@ -51,20 +19,20 @@ export function EmptyState() {
         </p>
       </div>
 
-      {/* 4 个场景快捷卡片 */}
+      {/* 场景快捷卡片 (由代码级配置文件 PROMPT_TEMPLATES 驱动) */}
       <div className="mt-5 grid w-full grid-cols-1 gap-2.5 sm:grid-cols-2">
-        {suggestions.map(({ icon: Icon, title, sub, onClick }) => (
+        {PROMPT_TEMPLATES.map(({ id, icon: Icon, title, sub, templateText }) => (
           <button
-            key={title}
+            key={id}
             type="button"
-            onClick={onClick}
+            onClick={() => ui.ask(templateText)}
             className="group flex items-start gap-3 border border-rule bg-paper px-4 py-3 text-left transition-all hover:border-ink/40 hover:bg-paper-warm"
           >
             <Icon
               className="mt-0.5 size-4 shrink-0 text-ink-mute transition-colors group-hover:text-accent"
               strokeWidth={1.5}
             />
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <span className="block truncate font-serif text-[13.5px] font-semibold text-ink">
                 {title}
               </span>

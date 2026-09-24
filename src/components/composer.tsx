@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CornerDownLeft } from "lucide-react";
 
 export function Composer({
@@ -13,8 +13,32 @@ export function Composer({
   /** 回复未落定期间锁定发送，保证用户发送幂等 */
   busy?: boolean;
 }) {
-  const [text, setText] = useState("");
+  const [text, setText] = useState(prefill.text || "");
+  const [prevN, setPrevN] = useState(prefill.n);
   const ref = useRef<HTMLTextAreaElement>(null);
+
+  // 当外部 prefill.n 变更时（例如点击场景模版），在渲染期同步状态，避免 effect 内 setState
+  if (prefill.n !== prevN) {
+    setPrevN(prefill.n);
+    setText(prefill.text || "");
+  }
+
+  // 当外部传入 prefill 时，自动聚焦并将光标移至末尾
+  useEffect(() => {
+    if (prefill.text && ref.current) {
+      ref.current.focus();
+      const len = prefill.text.length;
+      ref.current.setSelectionRange(len, len);
+    }
+  }, [prefill.n, prefill.text]);
+
+  // 根据文本内容自适应高度
+  useEffect(() => {
+    if (ref.current) {
+      ref.current.style.height = "auto";
+      ref.current.style.height = `${Math.min(ref.current.scrollHeight, 220)}px`;
+    }
+  }, [text]);
 
   const submit = () => {
     if (busy) return;
@@ -22,6 +46,9 @@ export function Composer({
     if (!t) return;
     onSend(t);
     setText("");
+    if (ref.current) {
+      ref.current.style.height = "auto";
+    }
   };
 
   return (
@@ -48,7 +75,7 @@ export function Composer({
           }}
           rows={1}
           placeholder={busy ? "旁白正在回复，请稍候……" : "跟旁白说点什么，像写日记一样……"}
-          className="max-h-36 min-h-[26px] flex-1 resize-none bg-transparent font-serif text-[15.5px] leading-[1.7] outline-none placeholder:text-ink-mute/70"
+          className="max-h-56 min-h-[28px] flex-1 resize-none bg-transparent font-serif text-[15.5px] leading-[1.7] outline-none placeholder:text-ink-mute/70"
         />
         <button
           type="button"
