@@ -42,8 +42,9 @@ export function mapPerson(value: unknown): Person {
         source: string(e.source),
         person: name,
         project: string(e.projectId || "当前聚焦项目"),
-        record: rationale ? `${observation}（推断动机：${rationale}）` : observation,
+        record: observation,
         observation,
+        rationale: rationale || undefined,
         pattern: string(e.inferredPattern || e.pattern),
         patternConfidence: number(e.confidence || e.patternConfidence, 85),
       };

@@ -60,15 +60,27 @@ export function EvidenceModal({
         <p className="mt-4 font-serif text-[15px] leading-[1.95] text-ink-soft">
           {evidence.observation}
         </p>
-        {evidence.pattern && <div className="mt-4 inline-flex items-center gap-2 border border-accent/50 px-3 py-1.5">
-          <span className="font-mono text-[10px] text-accent">▸</span>
-          <span className="font-serif text-[13px]">
-            支撑画像：{evidence.pattern}
-          </span>
-          <span className="font-mono text-[11px] text-accent">
-            {evidence.patternConfidence}%
-          </span>
-        </div>}
+        {evidence.rationale && (
+          <div className="mt-3 border-l-2 border-vermilion/60 bg-paper-warm p-3">
+            <div className="font-mono text-[10px] tracking-[0.08em] text-vermilion">
+              心理归因与推断逻辑 · RATIONALE
+            </div>
+            <p className="mt-1 font-serif text-[13.5px] leading-relaxed text-ink-soft">
+              {evidence.rationale}
+            </p>
+          </div>
+        )}
+        {evidence.pattern && (
+          <div className="mt-4 inline-flex items-center gap-2 border border-accent/50 px-3 py-1.5">
+            <span className="font-mono text-[10px] text-accent">▸</span>
+            <span className="font-serif text-[13px]">
+              支撑画像：{evidence.pattern}
+            </span>
+            <span className="font-mono text-[11px] text-accent">
+              {evidence.patternConfidence}%
+            </span>
+          </div>
+        )}
       </section>
 
       <div className="mt-8">

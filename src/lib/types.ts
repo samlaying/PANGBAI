@@ -16,6 +16,7 @@ export interface EvidenceItem {
   project: string;
   record: string; // 原始事件
   observation: string; // AI 提取的观察
+  rationale?: string; // AI 心理归因与推断逻辑
   pattern: string;
   patternConfidence: number;
 }
