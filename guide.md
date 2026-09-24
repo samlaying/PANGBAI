@@ -21,8 +21,9 @@
                 │                         │
           Frontend UI               Backend API
                 │                         │
-         React + Tailwind           TypeScript
-         shadcn/ui + Radix          Next.js Route Handlers
+    Agent Runtime 可视化客户端       TypeScript
+    严格三层解耦 (Infra/Biz/UI)    Next.js Route Handlers
+    Message Parts 流式驱动          Drizzle Transactions
                 │                         │
                 └────────────┬────────────┘
                              │
@@ -34,12 +35,13 @@
                              │
               ┌──────────────┼──────────────┐
               │              │              │
-           Skills         Tools          Memory
+           Skills         Tools      Memory & Storage
               │              │              │
-           SKILL.md      TypeScript      SQLite
-           (渐进式披露)    Functions      + Drizzle
-              │              │           + FTS5
-              │              │              │
+           SKILL.md      TypeScript     Supabase Cloud
+           (渐进式披露)    Functions       PostgreSQL
+              │              │       (Dev & Prod 双云端隔离)
+              │              │       + Drizzle ORM (pgTable)
+              │              │       + PGlite (离线单测)
               └──────────────┼──────────────┘
                              │
                    Workplace World Model
@@ -64,146 +66,139 @@
 | 层 | 技术 | 说明 |
 |:---|:---|:---|
 | **Web 框架** | **Next.js 15 (App Router)** | 全栈统一，前后端同仓 |
-| **语言** | **TypeScript** | 全栈统一 |
-| **UI** | **React 18** | |
-| **CSS** | **Tailwind CSS** | |
-| **组件库** | **shadcn/ui + Radix UI** | 可控、可定制 |
-| **表单** | **React Hook Form** | |
-| **校验** | **Zod** | 前后端共享 schema |
-| **数据获取** | **TanStack Query** | 前端缓存 / 请求管理 |
-| **Server** | **Next.js Route Handlers** | 不拆微服务 |
-| **Agent Runtime** | **DeepSeek Harness** | Agent loop / session / tool call / trace |
-| **Agent** | **1 个 Coach Agent** | 单 Agent + 多 Skill |
-| **Skills** | **SKILL.md** | 渐进式披露，程序性知识 |
-| **Tools** | **TypeScript Functions** | 10~15 个核心 Tool |
-| **LLM** | **ModelProvider 统一抽象** | DeepSeek / Claude / GPT / Qwen 可切换 |
-| **数据库** | **SQLite (better-sqlite3)** | 轻量、零配置、嵌入式 |
-| **ORM** | **Drizzle ORM** | 类型安全、迁移友好 |
-| **全文搜索** | **SQLite FTS5** | 人名、项目、事件检索 |
-| **Memory** | **自研 World Model** | Episodic + Semantic + Relationship |
-| **Event** | **SQLite Event Log** | 所有工作事件可追溯 |
-| **Reflection** | **TypeScript + LLM 调用** | 从 Event → Evidence → Pattern |
-| **Scheduler** | **Harness Scheduler / Cron** | 定时检查、主动提醒 |
-| **Background** | **Harness Loop / Worker** | 异步 reflection、proactive |
-| **Trace** | **Harness Trace** | 开发调试必备 |
-| **Eval** | **自建 Eval Dataset** | 50~100 个真实场景 |
-| **单测** | **Vitest** | |
-| **E2E** | **Playwright** | |
-| **部署** | **Vercel（首选）/ Docker** | |
-| **生产数据库（后期）** | **PostgreSQL** | |
-| **向量搜索（后期）** | **pgvector** | |
-| **可观测性（后期）** | **OpenTelemetry / Langfuse** | |
+| **语言** | **TypeScript** | 全栈统一强类型 |
+| **UI 架构** | **React 18 + 严格三层解耦** | Infra（基建）/ Business（领域纯 TS）/ Presentation（声明式视图） |
+| **CSS** | **Tailwind CSS** | 现代杂志风（Editorial）美学设计 |
+| **组件库** | **shadcn/ui + Radix UI** | 可控、可定制无障碍原子组件 |
+| **输入与模版** | **纯代码级配置 (`src/config/`)** | 4 大结构化占位模版，自适应伸缩 Composer，拒绝低频 UI CRUD |
+| **流式状态机** | **Message Parts 驱动** | 结构化微零件流（Text, Quote, Artifact, Memory, Rehearsal） |
+| **校验** | **Zod** | 前后端共享 schema 契约 |
+| **Server** | **Next.js Route Handlers** | 标准 SSE 流式响应与接口路由 |
+| **Agent Runtime** | **DeepSeek Harness** | Agent loop / session / tool call / trace 抽象 |
+| **Agent** | **1 个 Coach Agent** | 单 Agent + 多 Skill 架构 |
+| **Skills** | **SKILL.md** | 渐进式披露（Anthropic 规范），程序性知识 |
+| **Tools** | **TypeScript Functions** | 10~15 个高内聚领域 Tool |
+| **LLM** | **ModelProvider 统一抽象** | 默认接入 DeepSeek 系列（SiliconFlow），统一 OpenAI 协议 |
+| **云端数据库** | **Supabase Cloud PostgreSQL** | Dev 与 Prod 双项目物理隔离（新加坡 `ap-southeast-1`） |
+| **连接池架构** | **Supavisor 事务池 (端口 6543)** | `prepare: false` 支持 Serverless 高并发连接；直连端口 5432 用于 DDL |
+| **ORM** | **Drizzle ORM (`pg-core`)** | 全面 `pgTable` 强类型表定义与无侵入事务封装 |
+| **离线单测数据库** | **`@electric-sql/pglite`** | 进程内 WASM PostgreSQL，单测离线毫秒级运行，零云端网络依赖 |
+| **数据迁移** | **Supabase CLI + Drizzle Kit** | `supabase db push` / `npm run db:push` 多环境迁移工具链 |
+| **环境隔离** | **`.env.development.local` vs `.env.production.local`** | 双云端项目密钥物理隔离，杜绝机密入库 |
+| **分支策略** | **`main`（线上生产） + `dev`（日常开发）** | 本地与远程严格双向对齐，基于 GitNexus 的改动影响面评估 |
+| **单测体系** | **Node.js Test Runner + TSX** | 纯 TS 领域层剥离 DOM 依赖，毫秒级独立执行 |
+| **部署体系** | **Vercel / Supabase** | 前端与后端 API 托管 Vercel，数据库与存储托管 Supabase 云端 |
 
 ---
 
 ## 三、各层详细设计
 
-### 3.1 前端
+### 3.1 前端设计 — Agent Runtime 可视化客户端与三层解耦
 
+#### 3.1.1 核心定位演进
+前端不仅是传统对话框，而是**后端 Agent 事件驱动的可视化客户端（Visual Runtime Client）**：
+- **后端 Agent**：持续输出强类型事件流（SSE Events）的职场认知状态机；
+- **前端核心任务**：
+  1. **事件消费与状态维护**：在内存中准确解构并聚合事件流，组装为高内聚的业务领域实体（`AgentSession`、`MessagePart`）；
+  2. **声明式可视化呈现**：React 纯粹作为投影层（Projection Layer），以报刊杂志风美学（Editorial）呈现，杜绝整屏闪烁与低频 CRUD 弹窗带来的界面臃肿。
+
+#### 3.1.2 严格三层单向依赖解耦体系
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ 1. 表现与组件层 (Presentation Layer)                                  │
+│    src/components/ (纯展示组件: ChatFlow, Composer, EmptyState, Canvas)│
+│    src/hooks/      (React 适配器: useAgentSession, useWorkspace)       │
+└───────────────────────────────────▲────────────────────────────────────┘
+                                    │ 依赖 / 桥接订阅
+┌───────────────────────────────────┴────────────────────────────────────┐
+│ 2. 业务领域层 (Business Domain Layer)                                  │
+│    src/business/bus/      (事件总线: AgentBus)                         │
+│    src/business/entities/ (实体定义: AgentSession, MessagePart)        │
+│    src/business/parser/   (结构化 Markdown 与 YAML 块解析器)           │
+│    * 纯 TypeScript 实现，零 React 依赖，100% 独立单测覆盖 *            │
+└───────────────────────────────────▲────────────────────────────────────┘
+                                    │ 依赖 / 调用通信
+┌───────────────────────────────────┴────────────────────────────────────┐
+│ 3. 基础设施层 (Infrastructure Layer)                                   │
+│    src/infra/transport/   (SSE 流解码、跨包拼接与反序列化)             │
+│    src/infra/api/         (HTTP 客户端与数据契约映射)                  │
+│    src/infra/storage/     (客户端存储 ClientStorage，容错降级)         │
+│    * 纯通用底层工具，对上层业务领域概念零感知 *                        │
+└────────────────────────────────────────────────────────────────────────┘
 ```
-src/app/
-├── layout.tsx
-├── page.tsx                    # Chat（入口）
-├── chat/
-│   └── [sessionId]/
-├── people/
-│   ├── page.tsx                # 人物列表
-│   └── [personId]/
-│       ├── page.tsx            # 人物详情
-│       ├── evidence/           # 行为证据
-│       └── timeline/           # 互动时间线
-├── projects/
-│   ├── page.tsx
-│   └── [projectId]/
-├── relationships/
-├── meetings/
-├── memories/
-├── growth/                     # 我的成长
-└── settings/
-```
 
-**核心原则：Chat 只是入口，不是全部。**
+1. **基础设施层（`src/infra/`）**：封装着网络、存储与环境的技术实现。**解耦红线**：对上层业务概念零感知，禁止出现 `Coach`、`Memory`、`Project` 等业务专有词汇。
+2. **业务领域层（`src/business/`）**：沉淀前端核心 Runtime 逻辑与状态机（总线、会话、解析器）。**解耦红线**：**完全与 React 解耦**，不包含任何 Hook 或 JSX，脱离浏览器可在 Node.js 环境毫秒级完成独立单元测试。
+3. **表现与组件层（`src/components/` & `src/hooks/`）**：`src/hooks/` 作为“胶水适配器（Adapter）”，负责将业务领域层的对象和总线事件转换为 React 响应式 State；`AppShell` 保持轻量（Thin Orchestrator），只做子系统组装、全局快捷键与模态框调度。
 
-前端要呈现的是一个 **持续理解你的工作环境的 AI**，所以：
-- People 页面展示 AI 建立的人物画像 + 证据链
-- Project 页面展示项目风险、参与者关系
-- Growth 页面展示 AI 对你的建议和成长轨迹
-- Memories 页面可以查看、编辑、删除 AI 记住的内容
+#### 3.1.3 零件化流式驱动（Message Parts Model）
+后端输出通过微零件（Parts）流式驱动渐进式渲染：
+- `text`：正文段落，支持首字下沉（Dropcap）排版与 Markdown 渲染；
+- `quote`：建议回复话术卡片，支持一键复制到剪贴板；
+- `artifact`：方案/PRD 大纲骨架卡片，一键唤起右侧 Canvas 载入细化；
+- `memory_candidate`：AI 预填好的记忆反思卡片，支持人机协同单键确认；
+- `rehearsal`：尖锐追问模拟卡片，一键切入沉浸式角色扮演对练。
+
+#### 3.1.4 场景模版与输入框交互规范（KISS 原则）
+- **纯代码级集中管理（`src/config/prompt-templates.ts`）**：坚决杜绝低频功能的过度 UI 设计（Feature Creep），不增加破坏界面安静感的“模版增删改查”弹窗。内置 4 大多行富上下文结构化占位模版（向上管理、跨部门拉通、会议尖锐追问、高难度对话）。
+- **自适应排版与无缝输入**：输入框 Composer 支持根据多行结构自适应拉伸高度（最高 `220px` 并支持内联滚动）；模版填入后自动触发焦点聚焦，光标默认移至内容末尾，实现无缝接续书写。
+- **React 19 渲染安全规范**：在渲染期安全派生状态，纯 DOM 副作用收敛于 Effect，彻底消除重绘死循环与控制台警告。
 
 ---
 
-### 3.2 后端
+### 3.2 后端与工程目录架构
 
-```
+```text
 src/
-├── app/
+├── app/                        # Next.js App Router
+│   ├── layout.tsx              # 全局排版骨架与字体定义
+│   ├── page.tsx                # 主入口（AppShell 挂载点）
 │   └── api/
-│       ├── chat/               # 对话入口
-│       ├── people/
-│       ├── projects/
-│       ├── relationships/
-│       ├── memories/
-│       └── events/
+│       ├── chat/               # SSE 流式会话接口
+│       ├── people/             # 人物世界模型 CRUD
+│       ├── projects/           # 项目与产物接口
+│       ├── relationships/      # 关系图谱
+│       ├── memories/           # 记忆与反思沉淀
+│       └── events/             # 事件日志追溯
 │
-├── agent/
-│   ├── coach.ts                # Coach Agent 主体
-│   ├── skills/
-│   │   ├── workplace-coach/
-│   │   │   ├── SKILL.md
-│   │   │   ├── reference.md
-│   │   │   └── scripts/
-│   │   ├── people-model/
-│   │   │   └── SKILL.md
-│   │   ├── relationship-coach/
-│   │   │   └── SKILL.md
-│   │   ├── meeting-coach/
-│   │   │   └── SKILL.md
-│   │   ├── difficult-conversation/
-│   │   │   └── SKILL.md
-│   │   ├── memory-reflection/
-│   │   │   └── SKILL.md
-│   │   └── human-response/
-│   │       └── SKILL.md
-│   ├── tools/
-│   │   ├── people.ts
-│   │   ├── projects.ts
-│   │   ├── relationships.ts
-│   │   ├── events.ts
-│   │   ├── memory.ts
-│   │   └── evidence.ts
-│   └── prompts/
-│       └── system.ts
+├── business/                   # 前端领域层（纯 TS，零 React 依赖）
+│   ├── bus/                    # AgentBus 事件总线
+│   ├── entities/               # 会话状态机与微零件实体
+│   └── parser/                 # 流式 Markdown 与 YAML 块解析器
 │
-├── domain/
-│   ├── people/
-│   ├── projects/
-│   ├── relationships/
-│   ├── memories/
-│   ├── events/
-│   └── evidence/
+├── infra/                      # 前端基础设施层（通用底层能力）
+│   ├── api/                    # 强类型 HTTP 请求
+│   ├── storage/                # 本地容错存储
+│   └── transport/              # SSE 协议流式解包器
 │
-├── db/
-│   ├── schema.ts               # Drizzle schema
-│   ├── client.ts               # SQLite connection
-│   ├── queries/
-│   └── migrations/
+├── components/                 # 表现层组件（杂志风 Editorial UI）
+│   ├── app-shell.tsx           # 全局双栏与抽屉编排器
+│   ├── chat-flow.tsx           # 对话流与微零件卡片投影
+│   ├── composer.tsx            # 自适应输入框与快捷操作
+│   ├── empty-state.tsx         # 场景引导空态（代码级模版渲染）
+│   ├── canvas.tsx              # 双模态 Markdown 产物画布
+│   └── sidebar.tsx             # 侧边栏与时间流会话历史
 │
-├── model/
-│   ├── provider.ts             # ModelProvider 统一接口
-│   ├── deepseek.ts
-│   ├── claude.ts
-│   └── openai.ts
+├── hooks/                      # React 胶水适配器（Hooks）
+│   ├── use-agent-session.ts    # 桥接业务实体与 React 状态
+│   └── use-workspace.ts        # 面板、抽屉与画布状态切换
 │
-├── reflection/
-│   ├── engine.ts               # Reflection 主流程
-│   ├── evidence-extractor.ts   # 提取证据
-│   └── pattern-detector.ts     # 发现规律
+├── config/                     # 集中业务配置
+│   └── prompt-templates.ts     # 4 大结构化场景模版（纯代码级定义）
 │
-└── jobs/
-    ├── scheduler.ts
-    ├── reflection.ts           # 定期 Memory Reflection
-    ├── reminders.ts            # 会议/截止日提醒
-    └── proactive.ts            # 主动建议
+├── db/                         # 数据库与 ORM 层（云端 Supabase PostgreSQL）
+│   ├── client.ts               # Supavisor 事务池客户端连接（prepare: false）
+│   ├── schema/                 # Drizzle pgTable 强类型表定义
+│   ├── seed.ts                 # 种子数据填充脚本
+│   └── tests/setup-pglite.ts   # PGlite 离线单测数据库隔离环境
+│
+├── server/                     # 服务端核心服务与业务模型
+│   ├── agent/                  # Coach Agent 运行时编排
+│   └── world-model/            # 职场世界模型服务（事务安全）
+│
+└── supabase/                   # Supabase 云端 DDL 与迁移版本管理
+    ├── schema.sql              # 全量数据库结构基准定义
+    └── migrations/             # 迁移 SQL 历史版本链
 ```
 
 ---
@@ -465,44 +460,113 @@ get_person get_project search_events
 
 ---
 
-### 3.7 数据库设计
+### 3.7 数据库设计 — Supabase Cloud PostgreSQL 架构与 Drizzle ORM
 
-**SQLite + Drizzle ORM + FTS5**
+系统全面托管于 **Supabase Cloud PostgreSQL**（全云端物理隔离），并通过 **Drizzle ORM (`drizzle-orm/pg-core`)** 实现端到端强类型约束。
+
+#### 3.7.1 核心表结构定义（PostgreSQL DDL）
 
 ```sql
--- users
-users(id, name, email, role, created_at, updated_at)
+-- 1. 职场干系人档案表 (people)
+CREATE TABLE public.people (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL DEFAULT 'default_user',
+  name TEXT NOT NULL,
+  role TEXT NOT NULL,
+  department TEXT,
+  relationship_tone TEXT,
+  tension_score INTEGER DEFAULT 50,
+  advice TEXT,
+  created_at TIMESTAMPTZ DEFAULT TIMEZONE('utc', NOW()),
+  updated_at TIMESTAMPTZ DEFAULT TIMEZONE('utc', NOW())
+);
 
--- people：人物基础信息
-people(id, user_id, name, role, department, organization, created_at, updated_at)
+-- 2. 行为心理模型表 (person_models)
+CREATE TABLE public.person_models (
+  id TEXT PRIMARY KEY,
+  person_id TEXT NOT NULL REFERENCES public.people(id) ON DELETE CASCADE,
+  pattern TEXT NOT NULL,
+  confidence REAL NOT NULL,
+  evidence_count INTEGER NOT NULL DEFAULT 1,
+  last_observed_at TEXT,
+  created_at TIMESTAMPTZ DEFAULT TIMEZONE('utc', NOW())
+);
 
--- person_model：人物画像（不是直接贴标签！）
-person_model(id, person_id, pattern, confidence, evidence_count, last_observed_at)
+-- 3. 客观行为证据链表 (evidence)
+CREATE TABLE public.evidence (
+  id TEXT PRIMARY KEY,
+  person_id TEXT NOT NULL REFERENCES public.people(id) ON DELETE CASCADE,
+  event_id TEXT,
+  observation TEXT NOT NULL,
+  source TEXT NOT NULL,
+  date_str TEXT,
+  created_at TIMESTAMPTZ DEFAULT TIMEZONE('utc', NOW())
+);
 
--- projects
-projects(id, user_id, name, status, description, created_at, updated_at)
+-- 4. 真实项目档案表 (projects)
+CREATE TABLE public.projects (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL DEFAULT 'default_user',
+  name TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'in_progress',
+  progress INTEGER DEFAULT 0,
+  deadline TEXT,
+  risks_json TEXT,
+  milestones_json TEXT,
+  stakeholders_json TEXT,
+  advice TEXT,
+  created_at TIMESTAMPTZ DEFAULT TIMEZONE('utc', NOW()),
+  updated_at TIMESTAMPTZ DEFAULT TIMEZONE('utc', NOW())
+);
 
--- relationships
-relationships(id, user_id, person_id, type, quality, notes, created_at, updated_at)
+-- 5. Canvas 活文档产物表 (project_artifacts)
+CREATE TABLE public.project_artifacts (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
+  filename TEXT NOT NULL,
+  title TEXT NOT NULL,
+  doc_type TEXT NOT NULL DEFAULT 'prd',
+  frontmatter_json TEXT,
+  content TEXT NOT NULL,
+  version TEXT DEFAULT 'v1.0',
+  updated_at TIMESTAMPTZ DEFAULT TIMEZONE('utc', NOW())
+);
 
--- events：所有工作事件
-events(id, user_id, type, content, person_id, project_id, metadata, created_at)
+-- 6. 人机协同记忆反思候选表 (memory_candidates)
+CREATE TABLE public.memory_candidates (
+  id TEXT PRIMARY KEY,
+  conversation_id TEXT,
+  person_id TEXT NOT NULL REFERENCES public.people(id) ON DELETE CASCADE,
+  observation TEXT NOT NULL,
+  inferred_pattern TEXT NOT NULL,
+  confidence REAL NOT NULL,
+  rationale TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  created_at TIMESTAMPTZ DEFAULT TIMEZONE('utc', NOW())
+);
 
--- evidence：行为证据（支撑 person_model）
-evidence(id, person_id, event_id, observation, source, created_at)
-
--- memories：长期记忆
-memories(id, user_id, type, content, source_event_id, importance, created_at, updated_at)
-
--- situations：场景
-situations(id, user_id, type, context, resolution, created_at)
-
--- strategies：策略
-strategies(id, situation_id, approach, reasoning, created_at)
-
--- feedback：用户反馈
-feedback(id, user_id, situation_id, rating, comment, created_at)
+-- 7. 职场事件全文索引表 (events)
+CREATE TABLE public.events (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL DEFAULT 'default_user',
+  type TEXT NOT NULL,
+  title TEXT NOT NULL,
+  content TEXT NOT NULL,
+  person_id TEXT,
+  project_id TEXT,
+  metadata_json TEXT,
+  created_at TIMESTAMPTZ DEFAULT TIMEZONE('utc', NOW())
+);
 ```
+
+#### 3.7.2 关键连接架构与最佳实践
+1. **Supavisor 事务池（Transaction Pooler，端口 6543）**：
+   - 生产与开发环境在 Serverless / Next.js Route Handlers 中统一连接端口 `6543`；
+   - 驱动配置**必须**声明 `{ prepare: false }`，因为在 Supavisor 事务池模式下多请求复用物理后端连接，预编译语句跨连接不可见；
+2. **直连端口（Direct Connection，端口 5432）**：
+   - 仅用于执行 DDL 变更工具（如 `supabase db push` / `drizzle-kit push`）；
+3. **离线单测数据库隔离（PGlite）**：
+   - 单元测试运行在 `@electric-sql/pglite` 进程内 WASM 数据库中，每次单测初始化独立的隔离 schema，既拥有与生产相同的 PostgreSQL 语法与约束，又保证了零网络延迟与无副作用。
 
 **人物画像设计原则：**
 
@@ -762,39 +826,105 @@ Memory 更新（Reflection）
 
 ---
 
+### 3.14 双云端环境隔离规范（Development vs Production）
+
+为保障线上真实职场数据的安全性，旁白采用**物理级隔离的双云端项目方案**：
+
+#### 3.14.1 项目与资源映射
+- **开发环境（Development）**：
+  - 项目名称：`pangbai`
+  - 项目 Ref：`cxiqxdkbqirdvvjfvwvi`
+  - 所在区域：新加坡（`ap-southeast-1`）
+  - 配置文件：`.env.development.local`（严格 gitignore，杜绝密钥泄露）
+  - 启动命令：`npm run dev`（自动加载该配置）
+- **线上生产环境（Production）**：
+  - 项目名称：`pangbai-prod`
+  - 项目 Ref：`ghrfqvxxlhdsftuwlprm`
+  - 所在区域：新加坡（`ap-southeast-1`）
+  - 配置文件：`.env.production.local`（严格 gitignore，部署平台注入环境变量）
+  - 构建命令：`npm run build` / `npm start`
+- **公共模板**：`.env.example`（仅保留字段键名与格式指引，严禁填入真实 API 密码）。
+
+#### 3.14.2 数据库连接与迁移运维工作流
+```text
+本地代码定义 (src/db/schema/*.ts)
+         │
+         ├──► npm run db:push (使用当前环境 DATABASE_URL 快速同步表结构)
+         │
+         ├──► npm run db:studio (可视化本地/云端数据浏览器)
+         │
+         └──► supabase db push (通过 Supabase CLI 严格执行版本化迁移)
+```
+
+- **开发联调**：在本地修改 schema，通过 `npm run db:push` 将变更推入开发库 `pangbai`，验证无误；
+- **生产发布**：通过 `supabase db push --project-ref ghrfqvxxlhdsftuwlprm` 或流水线对线上库执行幂等迁移。
+
+---
+
+### 3.15 Git 双主干协作与发布规范（Branching & Release Workflow）
+
+本项目采用规范的 **`main`（生产主干） + `dev`（开发主干）双分支模型**：
+
+```text
+       ┌─────────── feature/xxx (特性分支) ───────────┐
+       │                                             │
+       ▼                                             ▼
+origin/dev ───────► 本地验证 (npm test + tsc) ───────► origin/dev (开发分支)
+                                                       │
+                                                       │ 验证稳定 & 提测通过
+                                                       ▼
+                                                 origin/main (生产分支 / 触发部署)
+```
+
+1. **`main` 分支（生产基准）**：
+   - 对应云端生产环境 `pangbai-prod`；
+   - 保护分支：只接受经过完整自动化验证与提测的代码合入，禁止直接在此分支进行未验证的开发提交。
+2. **`dev` 分支（开发集成）**：
+   - 对应云端开发环境 `pangbai`；
+   - 所有特性开发、实验性调优先提交或合入 `dev` 分支，本地与远程 `origin/dev` 保持实时追踪。
+3. **架构影响面分析（GitNexus Impact Analysis）**：
+   - 在修改高内聚业务实体或核心组件前，运行 `node .gitnexus/run.cjs impact "symbolName" --direction upstream --repo .`；
+   - 在提交前运行 `node .gitnexus/run.cjs detect-changes --scope all --repo .`，确保变更无意外蔓延。
+4. **发布闭环流程**：
+   - 步骤 1：本地在 `dev` 分支完成开发，确保 `npm test`（13+ 项测试全部通过）和 `npm run lint` 零告警；
+   - 步骤 2：推送并关联远端 `git push origin dev`；
+   - 步骤 3：将稳定改动合并至 `main` 并推送 `git push origin main` 触发线上发布。
+
+---
+
 ## 四、渐进式架构演进路线
 
 ```text
-Phase 1（MVP）
+Phase 1（MVP 基础落地）
 ─────────────────────────────
-✅ Next.js 全栈
-✅ 1 个 Coach Agent
-✅ 3~5 个 Skill
-✅ 10 个 Tool
-✅ SQLite + Drizzle + FTS5
-✅ Memory（Episodic + People Model）
-✅ Event Log
-✅ 基础 Reflection
-✅ 30 个 Eval Case
-✅ Harness Trace
+✅ Next.js 15 全栈 App Router
+✅ 1 个 Coach Agent + SKILL.md
+✅ 10 个 Tool 函数契约
+✅ Supabase Cloud PostgreSQL（全云端托管）
+✅ Dev & Prod 双云端项目物理隔离 (ap-southeast-1)
+✅ Drizzle ORM (pgTable) + Supavisor 事务池 (6543)
+✅ PGlite 本地 WASM 离线单测数据库
+✅ 前端严格三层解耦 (Infra / Business / Presentation)
+✅ Message Parts 流式状态机与双模态 Canvas
+✅ 4 大代码级场景模版 (prompt-templates.ts)
+✅ main & dev 双主干 Git 协作规范
+✅ 30+ 自动化单测与 GitNexus 代码索引
 
-Phase 2（增强）
+Phase 2（认知增强与主动介入）
 ─────────────────────────────
-✅ 6~7 个 Skill 全面覆盖
-✅ Relationship Memory
-✅ Background Scheduler
-✅ Proactive 主动提醒
-✅ 100 个 Eval Case
-✅ 量化 A/B 对比
+✅ 6~7 个 Skill 全面覆盖（关系、高难度对话、反思）
+✅ World Model（People + Projects + Evidence）
+✅ 人机协同 AI 预填记忆确认卡片
+✅ Multi-Stakeholder 会议尖锐连环追问推演
+✅ Proactive 主动提醒与悬浮卡片
+✅ 量化 A/B 对比与场景 Eval 体系
 
-Phase 3（规模化）
+Phase 3（规模化与企业协同）
 ─────────────────────────────
-→ PostgreSQL + pgvector
-→ 向量搜索（语义检索）
-→ OpenTelemetry / Langfuse
-→ 多用户 / 团队版
-→ 多 Agent（如果真的需要）
-→ 消息队列（如果真的需要）
+→ pgvector 向量语义检索与长文本混合搜索
+→ OpenTelemetry / Langfuse 生产链路追踪
+→ 多用户鉴权与组织多租户隔离
+→ 协同画布与导出多端排版（PDF / Notion / Feishu）
 ```
 
 ---
