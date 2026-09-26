@@ -65,14 +65,14 @@
 
 | 层 | 技术 | 说明 |
 |:---|:---|:---|
-| **Web 框架** | **Next.js 15 (App Router)** | 全栈统一，前后端同仓 |
+| **Web 框架** | **Next.js 16 (App Router)** | 全栈统一，前后端同仓 |
 | **语言** | **TypeScript** | 全栈统一强类型 |
-| **UI 架构** | **React 18 + 严格三层解耦** | Infra（基建）/ Business（领域纯 TS）/ Presentation（声明式视图） |
+| **UI 架构** | **React 19 + 严格三层解耦** | Infra（基建）/ Business（领域纯 TS）/ Presentation（声明式视图） |
 | **CSS** | **Tailwind CSS** | 现代杂志风（Editorial）美学设计 |
-| **组件库** | **shadcn/ui + Radix UI** | 可控、可定制无障碍原子组件 |
+| **组件库** | **自研原子组件（`components/atoms.tsx`）+ lucide-react** | 可控、可定制（shadcn/ui + Radix 为规划项，当前未引入） |
 | **输入与模版** | **纯代码级配置 (`src/config/`)** | 4 大结构化占位模版，自适应伸缩 Composer，拒绝低频 UI CRUD |
 | **流式状态机** | **Message Parts 驱动** | 结构化微零件流（Text, Quote, Artifact, Memory, Rehearsal） |
-| **校验** | **Zod** | 前后端共享 schema 契约 |
+| **校验** | **TypeScript 强类型**（规划引入 Zod） | 当前契约由 TS 类型 + Drizzle schema 承担 |
 | **Server** | **Next.js Route Handlers** | 标准 SSE 流式响应与接口路由 |
 | **Agent Runtime** | **DeepSeek Harness** | Agent loop / session / tool call / trace 抽象 |
 | **Agent** | **1 个 Coach Agent** | 单 Agent + 多 Skill 架构 |
@@ -154,12 +154,13 @@ src/
 │   ├── layout.tsx              # 全局排版骨架与字体定义
 │   ├── page.tsx                # 主入口（AppShell 挂载点）
 │   └── api/
-│       ├── chat/               # SSE 流式会话接口
-│       ├── people/             # 人物世界模型 CRUD
+│       ├── chat/               # 流式会话接口（纯文本流，兼容 SSE）
+│       ├── people/             # 人物世界模型 CRUD（含 memory/confirm 沉淀）
 │       ├── projects/           # 项目与产物接口
-│       ├── relationships/      # 关系图谱
-│       ├── memories/           # 记忆与反思沉淀
-│       └── events/             # 事件日志追溯
+│       ├── artifacts/          # Canvas 活文档产物 CRUD
+│       ├── relationships/      # 关系图谱（规划）
+│       ├── memories/           # 记忆与反思沉淀（规划，当前由 people/memory 承担）
+│       └── events/             # 事件日志追溯（规划）
 │
 ├── business/                   # 前端领域层（纯 TS，零 React 依赖）
 │   ├── bus/                    # AgentBus 事件总线
@@ -169,14 +170,14 @@ src/
 ├── infra/                      # 前端基础设施层（通用底层能力）
 │   ├── api/                    # 强类型 HTTP 请求
 │   ├── storage/                # 本地容错存储
-│   └── transport/              # SSE 协议流式解包器
+│   └── transport/              # SSE / 纯文本双模式流式解包器
 │
 ├── components/                 # 表现层组件（杂志风 Editorial UI）
 │   ├── app-shell.tsx           # 全局双栏与抽屉编排器
-│   ├── chat-flow.tsx           # 对话流与微零件卡片投影
+│   ├── chat/chat-flow.tsx      # 对话流与微零件卡片投影
+│   ├── chat/empty-state.tsx    # 场景引导空态（代码级模版渲染）
 │   ├── composer.tsx            # 自适应输入框与快捷操作
-│   ├── empty-state.tsx         # 场景引导空态（代码级模版渲染）
-│   ├── canvas.tsx              # 双模态 Markdown 产物画布
+│   ├── canvas/md-canvas.tsx    # 双模态 Markdown 产物画布
 │   └── sidebar.tsx             # 侧边栏与时间流会话历史
 │
 ├── hooks/                      # React 胶水适配器（Hooks）
@@ -184,21 +185,22 @@ src/
 │   └── use-workspace.ts        # 面板、抽屉与画布状态切换
 │
 ├── config/                     # 集中业务配置
-│   └── prompt-templates.ts     # 4 大结构化场景模版（纯代码级定义）
+│   ├── prompt-templates.ts     # 4 大结构化场景模版（纯代码级定义）
+│   └── workspace-profile.ts    # 工作区画像（行业 / 风格 → prompt 映射）
 │
 ├── db/                         # 数据库与 ORM 层（云端 Supabase PostgreSQL）
-│   ├── client.ts               # Supavisor 事务池客户端连接（prepare: false）
+│   ├── client.ts               # Supavisor 事务池连接（prepare: false）/ PGlite 双模式
 │   ├── schema/                 # Drizzle pgTable 强类型表定义
-│   ├── seed.ts                 # 种子数据填充脚本
-│   └── tests/setup-pglite.ts   # PGlite 离线单测数据库隔离环境
+│   └── migrate.ts              # SQLite 时代遗留（无调用方，待清理）
 │
 ├── server/                     # 服务端核心服务与业务模型
-│   ├── agent/                  # Coach Agent 运行时编排
-│   └── world-model/            # 职场世界模型服务（事务安全）
+│   ├── agent/                  # Coach Agent 运行时编排（context-assembler）
+│   ├── world-model/            # 职场世界模型服务（事务安全）
+│   └── artifacts/              # Frontmatter 容错解析
 │
 └── supabase/                   # Supabase 云端 DDL 与迁移版本管理
-    ├── schema.sql              # 全量数据库结构基准定义
-    └── migrations/             # 迁移 SQL 历史版本链
+    ├── schema.sql              # 全量数据库结构基准定义（规划，当前经 drizzle-kit db:push 同步）
+    └── migrations/             # 迁移 SQL 历史版本链（规划）
 ```
 
 ---
@@ -269,7 +271,7 @@ class OpenAIProvider implements ModelProvider { ... }
     │
     ▼
 【Step 2: 职场世界模型检索 (World Model Retrieval)】
-  • 本地 SQLite 查询人物偏好与历史证据：
+  • 通过 Drizzle 查询 PostgreSQL 世界模型（人物偏好与历史证据）：
     - 王总模式：偏好提前同步风险（置信度 82%）
     - 历史证据：7月8日延期事件、当前张力 65
     │
@@ -427,7 +429,7 @@ Relationship
 │
 Events
 ├── create_event
-├── search_events           # FTS5 全文搜索
+├── search_events           # 全文搜索（规划：PostgreSQL FTS / pgvector）
 ├── get_recent_events
 │
 Memory
@@ -897,9 +899,9 @@ origin/dev ───────► 本地验证 (npm test + tsc) ────�
 ```text
 Phase 1（MVP 基础落地）
 ─────────────────────────────
-✅ Next.js 15 全栈 App Router
-✅ 1 个 Coach Agent + SKILL.md
-✅ 10 个 Tool 函数契约
+✅ Next.js 16 全栈 App Router
+✅ 1 个 Coach Agent（SKILL.md 体系规划中）
+→ 10 个 Tool 函数契约（规划中，当前以格式契约替代）
 ✅ Supabase Cloud PostgreSQL（全云端托管）
 ✅ Dev & Prod 双云端项目物理隔离 (ap-southeast-1)
 ✅ Drizzle ORM (pgTable) + Supavisor 事务池 (6543)
@@ -908,16 +910,16 @@ Phase 1（MVP 基础落地）
 ✅ Message Parts 流式状态机与双模态 Canvas
 ✅ 4 大代码级场景模版 (prompt-templates.ts)
 ✅ main & dev 双主干 Git 协作规范
-✅ 30+ 自动化单测与 GitNexus 代码索引
+✅ 19 项自动化单测与 GitNexus 代码索引
 
 Phase 2（认知增强与主动介入）
 ─────────────────────────────
-✅ 6~7 个 Skill 全面覆盖（关系、高难度对话、反思）
+→ 6~7 个 Skill 全面覆盖（关系、高难度对话、反思）（规划）
 ✅ World Model（People + Projects + Evidence）
-✅ 人机协同 AI 预填记忆确认卡片
-✅ Multi-Stakeholder 会议尖锐连环追问推演
-✅ Proactive 主动提醒与悬浮卡片
-✅ 量化 A/B 对比与场景 Eval 体系
+✅ 人机协同记忆确认闭环（/confirm 事务落库已实现；AI 自动预填反思为规划）
+→ Multi-Stakeholder 会议尖锐连环追问推演（规划，会议面板当前空状态）
+→ Proactive 主动提醒与悬浮卡片（规划）
+→ 量化 A/B 对比与场景 Eval 体系（规划）
 
 Phase 3（规模化与企业协同）
 ─────────────────────────────

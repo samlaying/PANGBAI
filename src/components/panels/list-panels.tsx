@@ -1,17 +1,20 @@
-"use client";
-
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ChevronRight, Plus } from "lucide-react";
 import type { Person, Project } from "@/lib/types";
 import { useUI } from "../ui-context";
 import { Avatar, SolidButton, GhostButton } from "../atoms";
 import { PanelBody, PanelHeader } from "./side-panel";
+import { workspaceManager } from "@/business/entities/workspace-manager";
 
 export function PeoplePanel({ people, onCreated }: { people: Person[]; onCreated: (name: string, role: string) => Promise<void> }) {
   const ui = useUI();
   const [name, setName] = useState("");
   const [role, setRole] = useState("");
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    void workspaceManager.refreshPeople();
+  }, []);
   return (
     <>
       <PanelHeader kicker="人物索引 · PEOPLE INDEX">
@@ -77,24 +80,80 @@ export function ProjectsPanel({
 }: {
   projects: Project[];
   createSignal: number;
-  onCreated: (name: string, deadline: string) => Promise<void>;
+  onCreated: (params: {
+    name: string;
+    deadline?: string;
+    stakeholders?: Array<{ name: string; role?: string }>;
+    milestones?: Array<{ name: string; date: string; done?: boolean }>;
+    risks?: Array<{ title: string; note?: string }>;
+  }) => Promise<void>;
 }) {
   const ui = useUI();
   const [creating, setCreating] = useState(createSignal > 0);
   const [name, setName] = useState("");
   const [deadline, setDeadline] = useState("");
+  const [stakeholdersInput, setStakeholdersInput] = useState("");
+  const [milestonesInput, setMilestonesInput] = useState("");
+  const [risksInput, setRisksInput] = useState("");
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    void workspaceManager.refreshProjects();
+  }, []);
 
   const submit = async () => {
     const trimmed = name.trim();
     if (!trimmed) return;
     try {
-    await onCreated(trimmed, deadline.trim());
-    setError("");
-    setCreating(false);
-    setName("");
-    setDeadline("");
-    } catch { setError("创建失败，请重试"); }
+      const stakeholders = stakeholdersInput
+        ? stakeholdersInput.split(/[,，\n]+/).map((s) => s.trim()).filter(Boolean).map((str) => {
+            const match = str.match(/^(.+?)(?:\s*[（(](.+?)[)）]|\s+(.+))?$/);
+            return {
+              name: match?.[1]?.trim() || str,
+              role: match?.[2]?.trim() || match?.[3]?.trim() || "业务干系人",
+            };
+          })
+        : undefined;
+
+      const milestones = milestonesInput
+        ? milestonesInput.split(/[;；\n]+/).map((m) => m.trim()).filter(Boolean).map((str) => {
+            const parts = str.split(/[\s,，]+/);
+            return {
+              name: parts[0] || str,
+              date: parts[1] || "未定",
+              done: false,
+            };
+          })
+        : undefined;
+
+      const risks = risksInput
+        ? risksInput.split(/[;；\n]+/).map((r) => r.trim()).filter(Boolean).map((str) => {
+            const parts = str.split(/[:：]/);
+            return {
+              title: parts[0]?.trim() || str,
+              note: parts[1]?.trim() || "初始化记录的已知风险",
+            };
+          })
+        : undefined;
+
+      await onCreated({
+        name: trimmed,
+        deadline: deadline.trim() || undefined,
+        stakeholders,
+        milestones,
+        risks,
+      });
+
+      setError("");
+      setCreating(false);
+      setName("");
+      setDeadline("");
+      setStakeholdersInput("");
+      setMilestonesInput("");
+      setRisksInput("");
+    } catch {
+      setError("创建失败，请重试");
+    }
   };
 
   return (
@@ -107,43 +166,76 @@ export function ProjectsPanel({
       <PanelBody>
         {error && <p role="alert" className="text-sm text-vermilion">{error}</p>}
         {creating ? (
-          <div className="space-y-5">
+          <div className="space-y-4">
             <div className="kicker">新建项目档案 · NEW PROJECT</div>
             <div>
-              <label className="kicker mb-1.5 block" htmlFor="np-name">
-                项目名
+              <label className="kicker mb-1 block" htmlFor="np-name">
+                项目名 *
               </label>
               <input
                 id="np-name"
                 autoFocus
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && submit()}
                 placeholder="比如：客服知识库 v1"
-                className="w-full border border-rule bg-paper-warm px-4 py-2.5 font-serif text-[15px] outline-none transition-colors placeholder:text-ink-mute/70 focus:border-ink/60"
+                className="w-full border border-rule bg-paper-warm px-3 py-2 font-serif text-[14px] outline-none transition-colors placeholder:text-ink-mute/70 focus:border-ink/60"
               />
             </div>
             <div>
-              <label className="kicker mb-1.5 block" htmlFor="np-deadline">
+              <label className="kicker mb-1 block" htmlFor="np-deadline">
                 截止日期（可选）
               </label>
               <input
                 id="np-deadline"
                 value={deadline}
                 onChange={(e) => setDeadline(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && submit()}
                 placeholder="比如：12月15日"
-                className="w-full border border-rule bg-paper-warm px-4 py-2.5 font-serif text-[15px] outline-none transition-colors placeholder:text-ink-mute/70 focus:border-ink/60"
+                className="w-full border border-rule bg-paper-warm px-3 py-2 font-serif text-[14px] outline-none transition-colors placeholder:text-ink-mute/70 focus:border-ink/60"
               />
             </div>
-            <p className="text-[12px] leading-relaxed text-ink-mute">
-              创建后，旁白会在对话中自动留意与它相关的人和事。
+            <div>
+              <label className="kicker mb-1 block">
+                核心干系人（可选，逗号分隔，如：老李(技术主管), 王总(CEO)）
+              </label>
+              <input
+                value={stakeholdersInput}
+                onChange={(e) => setStakeholdersInput(e.target.value)}
+                placeholder="老李(技术负责人), 王总(CEO)"
+                className="w-full border border-rule bg-paper-warm px-3 py-2 font-serif text-[13px] outline-none transition-colors placeholder:text-ink-mute/70 focus:border-ink/60"
+              />
+            </div>
+            <div>
+              <label className="kicker mb-1 block">
+                初始里程碑（可选，分号/换行分隔，如：需求对齐 10月5日）
+              </label>
+              <textarea
+                rows={2}
+                value={milestonesInput}
+                onChange={(e) => setMilestonesInput(e.target.value)}
+                placeholder="需求对齐 10月5日&#10;技术评审 10月12日"
+                className="w-full border border-rule bg-paper-warm px-3 py-2 font-serif text-[12.5px] outline-none transition-colors placeholder:text-ink-mute/70 focus:border-ink/60"
+              />
+            </div>
+            <div>
+              <label className="kicker mb-1 block">
+                已知卡点与风险（可选，分号/换行分隔）
+              </label>
+              <textarea
+                rows={2}
+                value={risksInput}
+                onChange={(e) => setRisksInput(e.target.value)}
+                placeholder="前端排期紧张: 仅1名研发可用&#10;第三方接口不稳定"
+                className="w-full border border-rule bg-paper-warm px-3 py-2 font-serif text-[12.5px] outline-none transition-colors placeholder:text-ink-mute/70 focus:border-ink/60"
+              />
+            </div>
+            <p className="text-[11.5px] leading-relaxed text-ink-mute">
+              创建后，旁白会将干系人自动建档并写入世界模型，在后续对话中动态辅助。
             </p>
-            <div className="flex gap-2.5">
-              <SolidButton className="flex-1 py-2.5" onClick={submit}>
+            <div className="flex gap-2.5 pt-1">
+              <SolidButton className="flex-1 py-2" onClick={submit}>
                 创建档案
               </SolidButton>
-              <GhostButton className="flex-1 py-2.5" onClick={() => setCreating(false)}>
+              <GhostButton className="flex-1 py-2" onClick={() => setCreating(false)}>
                 取消
               </GhostButton>
             </div>

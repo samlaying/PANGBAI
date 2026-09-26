@@ -23,7 +23,7 @@
 
 ### 2. PANGBAI 前端的核心定位
 **前端是 Agent Runtime 的事件驱动可视化客户端（Visual Runtime Client）。**
-- 后端 Agent 是一个持续发出结构化事件流（SSE Events）的决策状态机；
+- 后端 Agent 是一个持续输出流式内容的决策状态机；当前 `/api/chat` 以 `text/plain` 纯文本流返回，由 `SSETransport` 在客户端规范化为 `message.delta` 事件；结构化事件协议（`agent-protocol.ts` 的 `tool.*` / `memory.candidate` / `ui.generative` 等）已定义，部分为接入真实 Function Calling 的预留；
 - 前端只负责两件事：
   1. **事件消费与状态维护**：在内存中准确解构并聚合事件流，组装为高内聚的业务领域实体；
   2. **声明式可视化呈现**：React 纯粹作为投影层（Projection Layer），根据最新状态派发视图渲染与捕获用户交互。
@@ -60,7 +60,7 @@
 
 ### 1. 基础设施层（`src/infra/`）
 - **核心职责**：封装着与网络、存储、运行环境交互的技术实现。
-  - `transport/sse-stream.ts`：处理网络 chunk 切片、粘包处理与 SSE 协议行解析；
+  - `transport/sse-transport.ts`：双模式流式传输——`text/plain` 纯文本流时逐 chunk 无损分发（严禁按 `\n\n` 拆分或 trim，保留全部换行与空格），标准 `text/event-stream` 时按 event/data 块解析；网络 chunk 切片、粘包处理与反序列化均在此时完成；
   - `storage/client-storage.ts`：封装 LocalStorage 容错读写与 SSR 降级；
   - `api/`：负责标准 HTTP Fetch 请求并映射为强类型返回。
 - **解耦红线**：**对上层业务概念零感知**。基础设施层绝对不允许出现 `Coach`、`Memory`、`Candidate`、`Project` 等业务专有词汇。
@@ -86,12 +86,14 @@
 大模型输出绝非单一文本块，而是复合意图的混合流。
 
 ### 1. 微零件模型（Message Parts）
-消息实体 `AgentMessage` 由结构化零件 `MessagePart[]` 驱动：
-- **`text`**：正文段落，支持首字下沉（Dropcap）排版与 Markdown 渲染；
-- **`quote`**：模型提取出的高价值对话金句或建议回复；
+消息实体 `AgentMessage` 由结构化零件 `MessagePart[]` 驱动（完整联合类型定义见 `src/business/entities/message-part.ts`）：
+- **`text`**：正文段落，支持首字下沉（Dropcap）排版与 Markdown 渲染；`isQuote` 标记的 text 即建议话术卡片（引用块）；
+- **`thinking`**：模型思考过程（协议预留，等待思考模型流）；
+- **`tool`**：工具调用卡片（协议预留，等待真实 Function Calling）；
 - **`artifact`**：包含 YAML 头的产物大纲或方案文档，可一键发送至右侧 Canvas 活文档；
 - **`memory_candidate`**：模型在对话中捕捉到的人物认知候选，支持单键确认沉淀为证据链；
-- **`rehearsal`**：针对特定高难度场景的一对一模拟演练卡片。
+- **`generative_ui`**：生成式 UI 零件（metric_table / timeline_chart 等，协议预留）；
+- **`rehearsal`**（规划中，尚未进入 Part 类型）：针对特定高难度场景的一对一模拟演练卡片。
 
 ### 2. 渐进式流式解析（Progressive Block Parsing）
 1. 随着 SSE 流推送文本 chunk，`AgentBus` 分发 `text_chunk` 事件；
@@ -165,7 +167,7 @@
 
 1. **秒级轻量单测（Fast Unit Testing）**：
    - 业务领域层与配置层剥离了浏览器与 DOM 依赖，直接通过 `node --import tsx --test tests/*.test.ts` 执行；
-   - 13+ 单元测试覆盖 Markdown/YAML 块级解析、总线分发、会话状态流转、模版配置完整性，执行耗时 < 300ms。
+   - 19 个单元测试用例（3 个测试文件）覆盖 Markdown/YAML 块级解析、总线分发、会话状态流转、模版配置完整性，以及后端运行时（上下文装配、记忆确认幂等、流切片重组），执行耗时 < 300ms。
 2. **静态全量检测与构建拦截（Static Guardrails）**：
    - `npx tsc --noEmit`：保证强类型无隐式 `any`；
    - `npm run lint`：ESLint 严格拦截不合理的 React hooks 使用模式；

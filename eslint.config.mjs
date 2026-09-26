@@ -12,6 +12,7 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     ".gitnexus/**",
+    "scripts/**",
     "next-env.d.ts",
     ".gitnexus/**",
   ]),

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { PROMPT_TEMPLATES } from "../src/config/prompt-templates";
 
 test("PROMPT_TEMPLATES configures structured workplace templates", () => {
-  assert.equal(PROMPT_TEMPLATES.length, 4);
+  assert.equal(PROMPT_TEMPLATES.length, 6);
 
   const titles = PROMPT_TEMPLATES.map((t) => t.title);
   assert.ok(titles.includes("记录今天的一件事"));

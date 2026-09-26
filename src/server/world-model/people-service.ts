@@ -4,22 +4,31 @@ import { eq, desc } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 
 export async function getPeopleWithDetails() {
-  const allPeople = await db.select().from(people);
-  const result = [];
+  const [allPeople, allModels, allEvidences] = await Promise.all([
+    db.select().from(people),
+    db.select().from(personModels),
+    db.select().from(evidence).orderBy(desc(evidence.createdAt)),
+  ]);
 
-  for (const p of allPeople) {
-    const models = await db
-      .select()
-      .from(personModels)
-      .where(eq(personModels.personId, p.id));
+  const modelsByPerson = new Map<string, typeof allModels>();
+  for (const m of allModels) {
+    const list = modelsByPerson.get(m.personId) || [];
+    list.push(m);
+    modelsByPerson.set(m.personId, list);
+  }
 
-    const evidences = await db
-      .select()
-      .from(evidence)
-      .where(eq(evidence.personId, p.id))
-      .orderBy(desc(evidence.createdAt));
+  const evidenceByPerson = new Map<string, typeof allEvidences>();
+  for (const e of allEvidences) {
+    const list = evidenceByPerson.get(e.personId) || [];
+    list.push(e);
+    evidenceByPerson.set(e.personId, list);
+  }
 
-    result.push({
+  return allPeople.map((p) => {
+    const models = modelsByPerson.get(p.id) || [];
+    const evidences = evidenceByPerson.get(p.id) || [];
+
+    return {
       ...p,
       models: models.map((m) => ({
         id: m.id,
@@ -38,10 +47,8 @@ export async function getPeopleWithDetails() {
         projectId: e.projectId,
         inferredPatternId: e.inferredPatternId,
       })),
-    });
-  }
-
-  return result;
+    };
+  });
 }
 
 export async function getPersonById(personId: string) {

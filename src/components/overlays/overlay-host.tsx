@@ -47,8 +47,8 @@ export function OverlayHost({
               <ProjectsPanel
                 projects={projects}
                 createSignal={0}
-                onCreated={async (name, deadline) => {
-                  const p = await addProject(name, deadline);
+                onCreated={async (params) => {
+                  const p = await addProject(params);
                   setPanel({ type: "project", id: p.id });
                 }}
               />

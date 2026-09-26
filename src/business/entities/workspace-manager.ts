@@ -1,29 +1,57 @@
 import { agentBus } from "../bus/agent-bus";
-import { workspaceApi, type ConfirmMemoryParams, type CreatePersonParams, type CreateProjectParams, type SaveArtifactParams } from "@/infra/api/workspace-api";
-import type { Person, Project, ProjectArtifact } from "@/lib/types";
+import { workspaceApi, type ConfirmMemoryParams, type CreatePersonParams, type CreateProjectParams, type CreateEventParams, type SaveArtifactParams } from "@/infra/api/workspace-api";
+import { clientStorage } from "@/infra/storage/client-storage";
+import { DEFAULT_WORKSPACE_PROFILE, type WorkspaceProfile } from "@/config/workspace-profile";
+import type { Person, Project, ProjectArtifact, WorkspaceEvent } from "@/lib/types";
+
+/** 偏好候选在人物世界模型中的宿主档案 ID（与后端 workplace-crm-worker 保持一致） */
+const USER_SELF_PERSON_ID = "user_self";
+/** coachingNotes 上限，超出后丢弃最旧的 */
+const COACHING_NOTES_LIMIT = 8;
 
 /**
  * WorkspaceManager
- * 业务实体层：负责管理世界模型档案（人物、项目、产物与记忆沉淀）。
+ * 业务实体层：负责管理世界模型档案（人物、项目、产物、事实事件与记忆沉淀）。
  * 遵循原则 ②⑤：只调用底层 API，向 Event Bus 广播变更，绝不知晓 UI 组件。
  */
 export class WorkspaceManager {
   public people: Person[] = [];
   public projects: Project[] = [];
+  public events: WorkspaceEvent[] = [];
   public isLoading: boolean = false;
 
   async init(): Promise<void> {
     if (this.isLoading) return;
     this.isLoading = true;
     try {
-      const [people, projects] = await Promise.all([
+      const results = await Promise.allSettled([
         workspaceApi.getPeople(),
         workspaceApi.getProjects(),
+        workspaceApi.getEvents(),
       ]);
-      this.people = people;
-      this.projects = projects;
-      this.notify("people_updated", this.people);
-      this.notify("projects_updated", this.projects);
+
+      const [peopleResult, projectsResult, eventsResult] = results;
+
+      if (peopleResult.status === "fulfilled") {
+        this.people = peopleResult.value;
+        this.notify("people_updated", this.people);
+      } else {
+        console.warn("WorkspaceManager init: getPeople failed:", peopleResult.reason);
+      }
+
+      if (projectsResult.status === "fulfilled") {
+        this.projects = projectsResult.value;
+        this.notify("projects_updated", this.projects);
+      } else {
+        console.warn("WorkspaceManager init: getProjects failed:", projectsResult.reason);
+      }
+
+      if (eventsResult.status === "fulfilled") {
+        this.events = eventsResult.value;
+        this.notify("events_updated", this.events);
+      } else {
+        console.warn("WorkspaceManager init: getEvents failed:", eventsResult.reason);
+      }
     } catch (error) {
       console.error("WorkspaceManager init failed:", error);
     } finally {
@@ -89,12 +117,56 @@ export class WorkspaceManager {
 
   async confirmMemory(params: ConfirmMemoryParams): Promise<Person> {
     const updatedPerson = await workspaceApi.confirmMemory(params);
+    // 偏好回流：确认「我」的偏好候选后，同步写入本地辅导设定，下一轮对话自动生效
+    if (params.personId === USER_SELF_PERSON_ID && params.pattern) {
+      this.applyConfirmedPreference(params.pattern.trim());
+    }
     this.people = this.people.map((p) => (p.id === updatedPerson.id ? updatedPerson : p));
     this.notify("people_updated", this.people);
     return updatedPerson;
   }
 
-  private notify(action: "people_updated" | "projects_updated" | "artifact_updated", payload?: unknown) {
+  /**
+   * 将确认过的偏好指引追加进 workspace_profile.coachingNotes（去重、限量）
+   */
+  private applyConfirmedPreference(guidance: string): void {
+    if (!guidance) return;
+    const profile = clientStorage.getItem<WorkspaceProfile>("workspace_profile", DEFAULT_WORKSPACE_PROFILE);
+    const notes = profile.coachingNotes || [];
+    if (notes.includes(guidance)) return;
+    const next = [...notes, guidance].slice(-COACHING_NOTES_LIMIT);
+    clientStorage.setItem<WorkspaceProfile>("workspace_profile", { ...profile, coachingNotes: next });
+  }
+
+  async refreshEvents(projectId?: string): Promise<void> {
+    try {
+      const events = await workspaceApi.getEvents(projectId ? { projectId } : undefined);
+      this.events = events;
+      this.notify("events_updated", this.events);
+    } catch (error) {
+      console.error("WorkspaceManager refreshEvents failed:", error);
+    }
+  }
+
+  async addEvent(params: CreateEventParams): Promise<{ id: string; harness?: Record<string, unknown> }> {
+    const res = await workspaceApi.createEvent(params);
+    // 录入事件可能自动创建人物或更新项目，同步刷新人物与项目
+    await Promise.all([
+      this.refreshEvents(params.projectId),
+      this.refreshPeople(),
+      this.refreshProjects(),
+    ]);
+    return res;
+  }
+
+  async deleteEvent(id: string, projectId?: string): Promise<void> {
+    void projectId;
+    await workspaceApi.deleteEvent(id);
+    this.events = this.events.filter((e) => e.id !== id);
+    this.notify("events_updated", this.events);
+  }
+
+  private notify(action: "people_updated" | "projects_updated" | "artifact_updated" | "events_updated", payload?: unknown) {
     agentBus.dispatch("workspace_changed", { action, payload });
   }
 }

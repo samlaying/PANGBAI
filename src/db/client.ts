@@ -24,20 +24,38 @@ if (globalForDb.db) {
   client = globalForDb.client;
 } else if (connectionString) {
   // 1. Supabase 云端 PostgreSQL 连接模式
-  const sqlClient = postgres(connectionString, {
-    prepare: false, // 必须设为 false 以兼容 Supabase Supavisor Transaction Pooler (端口 6543)
-    max: process.env.NODE_ENV === "production" ? 10 : 2,
-    idle_timeout: 20,
+  // 针对 Node.js 长驻服务（Next.js）：
+  // Supabase 端口 6543 是针对无状态 Serverless 的事务池（Supavisor），闲置时会主动断开 TCP 导致 'write CONNECTION_CLOSED'。
+  // 将 pooler 端口转换为 5432（Session 模式），以完美保持连接生命周期与持久化查询。
+  let effectiveUrl = connectionString;
+  if (effectiveUrl.includes(".pooler.supabase.com:6543")) {
+    effectiveUrl = effectiveUrl.replace(".pooler.supabase.com:6543", ".pooler.supabase.com:5432");
+  }
+
+  const sqlClient = postgres(effectiveUrl, {
+    prepare: false, // 兼容 Supabase Session Pooler
+    max: 10,
+    idle_timeout: 30,
     connect_timeout: 10,
+    max_lifetime: 60 * 30,
+    onnotice: () => {},
   });
   client = sqlClient;
   db = drizzlePg(sqlClient, { schema });
+  globalForDb.db = db;
+  globalForDb.client = client;
 } else {
+  if (process.env.NODE_ENV === "production" && process.env.NEXT_PHASE !== "phase-production-build") {
+    throw new Error("DATABASE_URL or SUPABASE_DATABASE_URL is required in production");
+  }
+
   // 2. 本地未配置 DATABASE_URL 时（如本地离线测试环境）：平滑使用内嵌 PGlite（纯内存 PostgreSQL 兼容引擎）
   // 语法、类型与 Supabase 保持 100% 一致
   const pgliteInstance = new PGlite();
   client = pgliteInstance;
   db = drizzlePglite(pgliteInstance, { schema }) as unknown as DrizzleDatabase;
+  globalForDb.db = db;
+  globalForDb.client = client;
 
   pgliteInstance.exec(`
     CREATE TABLE IF NOT EXISTS people (

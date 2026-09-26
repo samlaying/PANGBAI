@@ -113,6 +113,33 @@ export interface Meeting {
   relatedProjectId: string;
 }
 
+export type EventRecordType = "meeting" | "chat" | "review" | "incident";
+
+export interface WorkspaceEvent {
+  id: string;
+  type: EventRecordType;
+  title: string;
+  content: string;
+  personId?: string | null;
+  projectId?: string | null;
+  createdAt?: string | null;
+  metadata?: {
+    chatType?: "group" | "private";
+    attendees?: Array<{ name: string; role?: string }>;
+    actionItems?: Array<{ task: string; owner?: string; deadline?: string }>;
+    conclusion?: string;
+    blockingIssues?: string[];
+    harness_extraction?: {
+      summary?: string;
+      extractedPeopleCount?: number;
+      actionItemsCount?: number;
+      riskSignalsCount?: number;
+      processedAt?: string;
+    };
+    [key: string]: unknown;
+  };
+}
+
 export type NoticeIcon = "risk" | "message" | "calendar";
 
 export interface Notice {

@@ -12,7 +12,7 @@ export type BusEventMap = {
     payload?: unknown;
   };
   workspace_changed: {
-    action: "people_updated" | "projects_updated" | "artifact_updated";
+    action: "people_updated" | "projects_updated" | "artifact_updated" | "profile_updated" | "events_updated";
     payload?: unknown;
   };
   canvas_changed: {

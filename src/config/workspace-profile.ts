@@ -122,6 +122,8 @@ export interface WorkspaceProfile {
   industry: IndustryKey;
   style: CoachingStyleKey;
   isInitialized: boolean;
+  /** 用户在对话中确认过的辅导偏好备忘（由 CRM 偏好回流写入，每轮注入 Drawer 0） */
+  coachingNotes?: string[];
 }
 
 export const DEFAULT_WORKSPACE_PROFILE: WorkspaceProfile = {
@@ -129,4 +131,5 @@ export const DEFAULT_WORKSPACE_PROFILE: WorkspaceProfile = {
   industry: "internet_saas",
   style: "strategic",
   isInitialized: false,
+  coachingNotes: [],
 };

@@ -131,7 +131,13 @@ test("chat stream preserves SSE events split across network chunks", async () =>
       body: JSON.stringify({ messages: [{ role: "user", content: "你好" }] }),
     }) as never);
     assert.equal(response.status, 200);
-    assert.equal(await response.text(), "你好");
+    assert.match(response.headers.get("content-type") || "", /text\/event-stream/);
+    const streamText = await response.text();
+    const events = streamText
+      .split("\n\n")
+      .filter(Boolean)
+      .map((block) => JSON.parse(block.match(/^data: (.+)$/m)?.[1] || "{}"));
+    assert.equal(events.find((item) => item.type === "message.delta")?.delta, "你好");
   } finally {
     globalThis.fetch = previousFetch;
     if (previousKey === undefined) delete process.env.SILICONFLOW_API_KEY;

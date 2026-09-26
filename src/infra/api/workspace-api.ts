@@ -8,8 +8,23 @@ export interface CreatePersonParams {
 }
 
 export interface CreateProjectParams {
+  id?: string;
   name: string;
   deadline?: string;
+  progress?: number;
+  advice?: string;
+  stakeholders?: Array<{ name: string; role?: string; department?: string }>;
+  milestones?: Array<{ name: string; date: string; done?: boolean }>;
+  risks?: Array<{ title: string; note?: string }>;
+}
+
+export interface CreateEventParams {
+  type: import("@/lib/types").EventRecordType;
+  title: string;
+  content: string;
+  personId?: string;
+  projectId?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface SaveArtifactParams {
@@ -90,5 +105,27 @@ export const workspaceApi = {
       },
     );
     return mapPerson(raw.person);
+  },
+
+  async getEvents(params?: { projectId?: string; type?: string }): Promise<import("@/lib/types").WorkspaceEvent[]> {
+    const qs = new URLSearchParams();
+    if (params?.projectId) qs.set("projectId", params.projectId);
+    if (params?.type) qs.set("type", params.type);
+    const query = qs.toString() ? `?${qs.toString()}` : "";
+    const raw = await request<import("@/lib/types").WorkspaceEvent[]>(`/api/events${query}`);
+    return Array.isArray(raw) ? raw : [];
+  },
+
+  async createEvent(params: CreateEventParams): Promise<{ id: string; harness?: Record<string, unknown> }> {
+    return request<{ id: string; harness?: Record<string, unknown> }>("/api/events", {
+      method: "POST",
+      body: JSON.stringify(params),
+    });
+  },
+
+  async deleteEvent(id: string): Promise<void> {
+    await request(`/api/events/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
   },
 };
