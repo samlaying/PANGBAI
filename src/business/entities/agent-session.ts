@@ -31,6 +31,7 @@ export class AgentSession {
   public isRunning: boolean = false;
   private rawAccumulator: string = "";
   private pendingArtifactDoc?: { title: string; content: string; type: import("@/lib/types").ArtifactType };
+  private lastDispatchedCanvas?: { title: string; content: string };
 
   constructor(id: string, title = "新的对话", projectId?: string) {
     this.id = id;
@@ -121,11 +122,34 @@ export class AgentSession {
       | undefined;
     if (!artifactDoc) return;
     this.pendingArtifactDoc = undefined;
+    // message.final 重解析会再次产出相同文档；内容一致时不再重复派发 canvas 开启
+    if (
+      this.lastDispatchedCanvas &&
+      this.lastDispatchedCanvas.title === artifactDoc.title &&
+      this.lastDispatchedCanvas.content === artifactDoc.content
+    ) {
+      return;
+    }
+    this.lastDispatchedCanvas = { title: artifactDoc.title, content: artifactDoc.content };
     agentBus.dispatch("canvas_open_requested", {
       title: artifactDoc.title,
       content: artifactDoc.content,
       projectId,
     });
+  }
+
+  /**
+   * 以当前 rawAccumulator 为准重建文本 parts（delta 累积与 message.final 终稿共用）
+   */
+  private reparseText(msg: AgentMessage): void {
+    const { parts, artifactDoc } = parseMarkdownToBlocksAndParts(this.rawAccumulator);
+    if (artifactDoc) this.pendingArtifactDoc = artifactDoc;
+
+    // 保留已有的 tool / candidate 等特殊 parts
+    const specialParts = msg.parts.filter((p) => p.type !== "text" && p.type !== "artifact");
+    msg.parts = [...specialParts, ...parts];
+
+    this.notify("part_updated", { messageId: msg.id, parts: msg.parts });
   }
 
   /**
@@ -135,13 +159,22 @@ export class AgentSession {
     switch (event.type) {
       case "message.delta": {
         this.rawAccumulator += event.delta;
-        const { parts, artifactDoc } = parseMarkdownToBlocksAndParts(this.rawAccumulator);
-        if (artifactDoc) this.pendingArtifactDoc = artifactDoc;
+        this.reparseText(msg);
+        break;
+      }
 
-        // 保留已有的 tool / candidate 等特殊 parts
-        const specialParts = msg.parts.filter((p) => p.type !== "text" && p.type !== "artifact");
-        msg.parts = [...specialParts, ...parts];
+      case "message.final": {
+        // 服务端门禁处理后的权威全文：覆盖累积文本，保证所见 == 落库 == artifact
+        this.rawAccumulator = event.text;
+        this.reparseText(msg);
+        break;
+      }
 
+      case "run.error": {
+        msg.parts.push({
+          type: "text",
+          text: `本次回复中断：${event.error}${event.code ? `（${event.code}）` : ""}`,
+        });
         this.notify("part_updated", { messageId: msg.id, parts: msg.parts });
         break;
       }
@@ -230,6 +263,8 @@ export class AgentSession {
 
       case "run.finished": {
         msg.usage = event.usage;
+        msg.runStatus = event.status;
+        msg.finishReason = event.finishReason;
         this.notify("part_updated", { messageId: msg.id, usage: msg.usage });
         break;
       }

@@ -9,6 +9,7 @@ import type { ArtifactType } from "@/lib/types";
 export type AgentEventType =
   | "run.started"
   | "message.delta"
+  | "message.final"
   | "thinking.delta"
   | "tool.started"
   | "tool.progress"
@@ -18,6 +19,15 @@ export type AgentEventType =
   | "ui.generative"
   | "run.finished"
   | "run.error";
+
+export type RunStatus = "success" | "aborted" | "failed";
+
+export type RunFinishReason =
+  | "stop"
+  | "empty_reply"
+  | "client_disconnect"
+  | "upstream_error"
+  | "gate_retry_exhausted";
 
 export interface BaseAgentEvent {
   type: AgentEventType;
@@ -35,6 +45,13 @@ export interface MessageDeltaEvent extends BaseAgentEvent {
   type: "message.delta";
   messageId?: string;
   delta: string;
+}
+
+export interface MessageFinalEvent extends BaseAgentEvent {
+  type: "message.final";
+  messageId?: string;
+  /** 门禁处理后的权威全文：客户端应以此替换累积的 delta 文本，保证所见 == 落库 */
+  text: string;
 }
 
 export interface ThinkingDeltaEvent extends BaseAgentEvent {
@@ -97,6 +114,11 @@ export interface RunFinishedEvent extends BaseAgentEvent {
     completionTokens?: number;
     totalTokens?: number;
   };
+  /** 终态语义：idle != turn success，由服务端按真实信号分类 */
+  status?: RunStatus;
+  finishReason?: RunFinishReason;
+  /** 附带信息，如质量门禁报告 { gate: {...} } */
+  metadata?: Record<string, unknown>;
 }
 
 export interface RunErrorEvent extends BaseAgentEvent {
@@ -108,6 +130,7 @@ export interface RunErrorEvent extends BaseAgentEvent {
 export type AgentEvent =
   | RunStartedEvent
   | MessageDeltaEvent
+  | MessageFinalEvent
   | ThinkingDeltaEvent
   | ToolStartedEvent
   | ToolProgressEvent

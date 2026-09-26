@@ -57,5 +57,8 @@ export interface AgentMessage {
     completionTokens?: number;
     totalTokens?: number;
   };
+  /** 服务端裁决的运行终态（见 agent-protocol RunFinishedEvent.status） */
+  runStatus?: "success" | "aborted" | "failed";
+  finishReason?: string;
   feedback?: "helpful" | "unhelpful";
 }
