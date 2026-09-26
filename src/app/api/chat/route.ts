@@ -14,17 +14,13 @@ import {
   runWorkplaceCRMPipeline,
   USER_SELF_PERSON_ID,
   PREFERENCE_KIND_LABELS,
+  classifyRunOutcome,
+  createSseEmitter,
+  estimateTokens,
 } from "@/server/harness";
 import { parseFrontmatter } from "@/server/artifacts/frontmatter";
 
 export const runtime = "nodejs";
-
-/**
- * 格式化 SSE 消息块
- */
-function sseChunk(event: string, data: unknown): string {
-  return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-}
 
 export async function POST(req: NextRequest) {
   const startTime = Date.now();
@@ -109,7 +105,7 @@ export async function POST(req: NextRequest) {
     const baseUrl = process.env.SILICONFLOW_BASE_URL || "https://api.siliconflow.cn/v1";
     const model = process.env.DEFAULT_MODEL || "deepseek-ai/DeepSeek-V3";
 
-    const payload = {
+    const payload: Record<string, unknown> = {
       model,
       messages: [
         { role: "system", content: systemPrompt },
@@ -117,16 +113,41 @@ export async function POST(req: NextRequest) {
       ],
       stream: true,
       temperature: 0.6,
+      // 请求 provider 在流末尾返回真实 usage（choices 为空的 usage chunk）
+      stream_options: { include_usage: true },
     };
 
-    const upstreamRes = await fetch(`${baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(payload),
-    });
+    // 客户端断连级联：req.signal (Next 已接线真实断连) 与响应体 cancel() 双路触发
+    const disconnect = new AbortController();
+
+    const callUpstream = (requestBody: Record<string, unknown>) =>
+      fetch(`${baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(requestBody),
+        signal: disconnect.signal,
+      });
+
+    let upstreamRes = await callUpstream(payload);
+
+    // 个别网关不接受 stream_options：识别后去掉该字段原样重发一次
+    if (upstreamRes.status === 400 || upstreamRes.status === 422) {
+      const errText = await upstreamRes.text().catch(() => "");
+      if (/stream_options|include_usage/i.test(errText)) {
+        const fallbackPayload = { ...payload };
+        delete fallbackPayload.stream_options;
+        upstreamRes = await callUpstream(fallbackPayload);
+      } else {
+        console.error("SiliconFlow Upstream Error:", upstreamRes.status, errText);
+        return new Response(JSON.stringify({ error: `SiliconFlow upstream error: ${upstreamRes.status}` }), {
+          status: 502,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+    }
 
     if (!upstreamRes.ok || !upstreamRes.body) {
       const errText = await upstreamRes.text().catch(() => "");
@@ -140,45 +161,52 @@ export async function POST(req: NextRequest) {
     const encoder = new TextEncoder();
     const decoder = new TextDecoder();
 
+    let responseCancelled = false;
+
     // 5. 构造标准 SSE 事件流输出
     const stream = new ReadableStream({
+      // 平台取消响应体而 req.signal 未触发的双保险
+      cancel() {
+        responseCancelled = true;
+        disconnect.abort(new Error("response_cancelled"));
+      },
       async start(controller) {
+        const emitter = createSseEmitter(controller, encoder);
+        let clientDisconnected = false;
+        let streamError: unknown;
+        let gateModified = false;
+        let capturedUsage:
+          | { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
+          | undefined;
+
         // 5.1 推送 run.started 事件
-        controller.enqueue(
-          encoder.encode(
-            sseChunk("run.started", {
-              type: "run.started",
-              sessionId: currentSessionId,
-              messageId: assistantMsgId,
-              timestamp: Date.now(),
-            })
-          )
-        );
+        emitter.emit("run.started", {
+          type: "run.started",
+          sessionId: currentSessionId,
+          messageId: assistantMsgId,
+          timestamp: Date.now(),
+        });
 
         // 5.2 若 Jev 命中技能，推送 tool.started 事件 (让前端感知到正在调用技能)
         if (jevDecision.choice !== "direct_chat") {
-          controller.enqueue(
-            encoder.encode(
-              sseChunk("tool.started", {
-                type: "tool.started",
-                toolCallId: `call_${jevDecision.choice}`,
-                toolName: jevDecision.choice,
-                input: {
-                  skill: jevDecision.choice,
-                  score: jevDecision.score,
-                  rationale: jevDecision.rationale,
-                },
-                timestamp: Date.now(),
-              })
-            )
-          );
+          emitter.emit("tool.started", {
+            type: "tool.started",
+            toolCallId: `call_${jevDecision.choice}`,
+            toolName: jevDecision.choice,
+            input: {
+              skill: jevDecision.choice,
+              score: jevDecision.score,
+              rationale: jevDecision.rationale,
+            },
+            timestamp: Date.now(),
+          });
         }
 
         const reader = upstreamRes.body!.getReader();
         let buffer = "";
 
         try {
-          while (true) {
+          readLoop: while (true) {
             const { done, value } = await reader.read();
             if (done) break;
 
@@ -196,6 +224,13 @@ export async function POST(req: NextRequest) {
 
               try {
                 const parsed = JSON.parse(jsonStr);
+
+                // 流末尾的真实 usage chunk（choices 为空）
+                if (parsed.usage && (!parsed.choices || parsed.choices.length === 0)) {
+                  capturedUsage = parsed.usage;
+                  continue;
+                }
+
                 const deltaContent = parsed.choices?.[0]?.delta?.content;
                 if (typeof deltaContent === "string" && deltaContent) {
                   if (ttftMs === null) {
@@ -203,40 +238,62 @@ export async function POST(req: NextRequest) {
                   }
                   fullReply += deltaContent;
 
-                  // 5.3 标准推送 message.delta 事件
-                  controller.enqueue(
-                    encoder.encode(
-                      sseChunk("message.delta", {
-                        type: "message.delta",
-                        messageId: assistantMsgId,
-                        delta: deltaContent,
-                        timestamp: Date.now(),
-                      })
-                    )
-                  );
+                  // 5.3 标准推送 message.delta 事件；发射失败即客户端已断开
+                  const delivered = emitter.emit("message.delta", {
+                    type: "message.delta",
+                    messageId: assistantMsgId,
+                    delta: deltaContent,
+                    timestamp: Date.now(),
+                  });
+                  if (!delivered) {
+                    clientDisconnected = true;
+                    break readLoop;
+                  }
                 }
               } catch {
                 // 忽略非完整 JSON 行
               }
             }
           }
+        } catch (err) {
+          streamError = err;
         } finally {
-          reader.releaseLock();
+          try {
+            await reader.cancel();
+          } catch {
+            // 上游流已关闭
+          }
         }
 
         // 6. 【流式质量门禁与契约校验】：修复 YAML Frontmatter 与引用卡片格式
-        const knownPeopleList = await db.select({ id: people.id, name: people.name }).from(people);
-        fullReply = QualityGate.processOutput(fullReply, {
-          activeSkill: jevDecision.choice,
-          knownPeople: knownPeopleList,
-        });
+        //    门禁失败不视为回合失败：原文即终稿，仅记录错误
+        if (!clientDisconnected && streamError === undefined) {
+          try {
+            const knownPeopleList = await db.select({ id: people.id, name: people.name }).from(people);
+            const gated = QualityGate.processOutput(fullReply, {
+              activeSkill: jevDecision.choice,
+              knownPeople: knownPeopleList,
+            });
+            if (gated !== fullReply) {
+              fullReply = gated;
+              gateModified = true;
+              // 终稿同步：保证用户所见 == 落库 == artifact 内容
+              emitter.emit("message.final", {
+                type: "message.final",
+                messageId: assistantMsgId,
+                text: fullReply,
+                timestamp: Date.now(),
+              });
+            }
+          } catch (gateErr) {
+            console.error("QualityGate error:", gateErr);
+          }
 
-        // 7. 【Canvas 文档检测与唤起】：若正文包含 YAML Frontmatter，下发 artifact.suggested
-        const docParsed = parseFrontmatter(fullReply);
-        if (docParsed.frontmatter.title || docParsed.frontmatter.type) {
-          controller.enqueue(
-            encoder.encode(
-              sseChunk("artifact.suggested", {
+          // 7. 【Canvas 文档检测与唤起】：若正文包含 YAML Frontmatter，下发 artifact.suggested
+          try {
+            const docParsed = parseFrontmatter(fullReply);
+            if (docParsed.frontmatter.title || docParsed.frontmatter.type) {
+              emitter.emit("artifact.suggested", {
                 type: "artifact.suggested",
                 artifactId: `art_${randomUUID().slice(0, 8)}`,
                 title: docParsed.frontmatter.title || "落地方案.md",
@@ -245,42 +302,77 @@ export async function POST(req: NextRequest) {
                 content: fullReply,
                 description: docParsed.frontmatter.expected_solution || "由 Harness 技能自动生成的大纲与方案",
                 timestamp: Date.now(),
-              })
-            )
-          );
-        }
+              });
+            }
+          } catch (docErr) {
+            console.error("Artifact detection error:", docErr);
+          }
 
-        // 8. 闭环技能调用事件 tool.result
-        if (jevDecision.choice !== "direct_chat") {
-          controller.enqueue(
-            encoder.encode(
-              sseChunk("tool.result", {
-                type: "tool.result",
-                toolCallId: `call_${jevDecision.choice}`,
-                output: {
-                  status: "success",
-                  skill: jevDecision.choice,
-                  summary: jevDecision.rationale,
-                },
+          // 8. 闭环技能调用事件 tool.result
+          if (jevDecision.choice !== "direct_chat") {
+            emitter.emit("tool.result", {
+              type: "tool.result",
+              toolCallId: `call_${jevDecision.choice}`,
+              output: {
                 status: "success",
-                timestamp: Date.now(),
-              })
-            )
-          );
+                skill: jevDecision.choice,
+                summary: jevDecision.rationale,
+              },
+              status: "success",
+              timestamp: Date.now(),
+            });
+          }
         }
 
-        // 9. 【异步 Workplace CRM Worker】：真实因果语义反思与推流（人物洞察 + 偏好信号）
-        const { insights, preferences } = await runWorkplaceCRMPipeline({
-          sessionId: currentSessionId,
-          projectId: targetProjectId,
-          userMessage: userQuery,
-          assistantReply: fullReply,
+        // 9. 终态结算：idle != turn success，按真实信号分类裁决
+        const outcome = classifyRunOutcome({
+          clientDisconnected: clientDisconnected || responseCancelled || req.signal.aborted,
+          streamError,
+          replyChars: fullReply.length,
         });
 
-        for (const item of insights) {
-          controller.enqueue(
-            encoder.encode(
-              sseChunk("memory.candidate", {
+        if (outcome.status !== "success") {
+          emitter.emit("run.error", {
+            type: "run.error",
+            error: outcome.errorMessage ?? "流式生成中断",
+            code: outcome.errorCode ?? outcome.finishReason,
+            timestamp: Date.now(),
+          });
+        }
+
+        const totalLatencyMs = Date.now() - startTime;
+        const promptTokens =
+          capturedUsage?.prompt_tokens ??
+          estimateTokens(systemPrompt) + estimateTokens(JSON.stringify(messages));
+        const completionTokens = capturedUsage?.completion_tokens ?? estimateTokens(fullReply);
+        const totalTokens = capturedUsage?.total_tokens ?? promptTokens + completionTokens;
+
+        emitter.emit("run.finished", {
+          type: "run.finished",
+          status: outcome.status,
+          finishReason: outcome.finishReason,
+          usage: {
+            promptTokens,
+            completionTokens,
+            totalTokens,
+          },
+          metadata: gateModified ? { gate: { modified: true } } : undefined,
+          timestamp: Date.now(),
+        });
+
+        // 10. 【Workplace CRM Worker】：真实因果语义反思与推流（人物洞察 + 偏好信号）
+        //     仅成功回合执行；断连/失败回合没有可反思的完整交换
+        if (outcome.status === "success") {
+          try {
+            const { insights, preferences } = await runWorkplaceCRMPipeline({
+              sessionId: currentSessionId,
+              projectId: targetProjectId,
+              userMessage: userQuery,
+              assistantReply: fullReply,
+            });
+
+            for (const item of insights) {
+              emitter.emit("memory.candidate", {
                 type: "memory.candidate",
                 candidateId: item.candidateId || `cand_${randomUUID().slice(0, 8)}`,
                 personId: item.personId,
@@ -290,16 +382,12 @@ export async function POST(req: NextRequest) {
                 confidence: item.confidence,
                 targetScene: "实时职场交互",
                 timestamp: Date.now(),
-              })
-            )
-          );
-        }
+              });
+            }
 
-        for (const pref of preferences) {
-          if (!pref.candidateId) continue;
-          controller.enqueue(
-            encoder.encode(
-              sseChunk("memory.candidate", {
+            for (const pref of preferences) {
+              if (!pref.candidateId) continue;
+              emitter.emit("memory.candidate", {
                 type: "memory.candidate",
                 candidateId: pref.candidateId,
                 personId: USER_SELF_PERSON_ID,
@@ -309,32 +397,14 @@ export async function POST(req: NextRequest) {
                 confidence: pref.confidence,
                 targetScene: `偏好进化 · ${PREFERENCE_KIND_LABELS[pref.kind] || pref.kind}`,
                 timestamp: Date.now(),
-              })
-            )
-          );
+              });
+            }
+          } catch (crmErr) {
+            console.error("Workplace CRM pipeline error:", crmErr);
+          }
         }
 
-        // 10. 结算统计与推送 run.finished
-        const totalLatencyMs = Date.now() - startTime;
-        const promptTokens = Math.ceil(systemPrompt.length / 3) + Math.ceil(JSON.stringify(messages).length / 3);
-        const completionTokens = Math.ceil(fullReply.length / 3);
-        const totalTokens = promptTokens + completionTokens;
-
-        controller.enqueue(
-          encoder.encode(
-            sseChunk("run.finished", {
-              type: "run.finished",
-              usage: {
-                promptTokens,
-                completionTokens,
-                totalTokens,
-              },
-              timestamp: Date.now(),
-            })
-          )
-        );
-
-        // 11. 异步落库持久化 (不阻塞用户)
+        // 11. 尽力落库持久化 (不阻塞用户；成败回合都执行，失败也保留部分回复与真实状态)
         try {
           // 保存 Session
           const existingSession = await db.select({ id: sessions.id }).from(sessions).where(eq(sessions.id, currentSessionId)).limit(1);
@@ -368,7 +438,7 @@ export async function POST(req: NextRequest) {
             timestampStr: "刚刚",
           });
 
-          // 记录 Trace
+          // 记录 Trace：status 为终态分类结果，不再恒写 success
           await db.insert(llmCallTraces).values({
             id: randomUUID(),
             traceId: randomUUID(),
@@ -381,20 +451,32 @@ export async function POST(req: NextRequest) {
             totalTokens,
             ttftMs: ttftMs || totalLatencyMs,
             totalLatencyMs,
-            status: "success",
+            status: outcome.status,
             metadataJson: JSON.stringify({
               charCount: fullReply.length,
               jevChoice: jevDecision.choice,
               jevScore: jevDecision.score,
+              finishReason: outcome.finishReason,
+              usageSource: capturedUsage ? "provider" : "estimated",
+              gateModified,
             }),
           });
         } catch (dbErr) {
           console.error("Async DB persistence error:", dbErr);
         }
 
-        controller.close();
+        if (!emitter.closed) {
+          try {
+            controller.close();
+          } catch {
+            // 响应体已被取消
+          }
+        }
       },
     });
+
+    // 客户端断连时级联中断上游请求，停止为已放弃的流付费
+    req.signal.addEventListener("abort", () => disconnect.abort(req.signal.reason));
 
     return new Response(stream, {
       headers: {
