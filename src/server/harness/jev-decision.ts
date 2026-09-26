@@ -142,11 +142,20 @@ function evaluateHeuristic(input: JevEvaluationInput): JevDecision {
 /**
  * 接入 TypeSafe Jev 官方 System One 决策 API
  */
+let warnedJevKeyMissing = false;
+
 async function callTypeSafeJevAPI(input: JevEvaluationInput): Promise<JevDecision | null> {
-  const apiKey =
-    process.env.JEV_API_KEY ||
-    "apikey_252e5ec34f0537d46cca1abaf7be78e17eb_d231ad0f049341fcba1561015603d8ed60446c221a2663ba361654a69fec978a";
+  const apiKey = process.env.JEV_API_KEY;
   const endpoint = process.env.JEV_BASE_URL || "https://api.typesafe.ai/v1/systemone";
+
+  if (!apiKey) {
+    // 密钥只从环境变量读取；缺失时降级本地启发式，绝不内置兜底密钥
+    if (!warnedJevKeyMissing) {
+      warnedJevKeyMissing = true;
+      console.warn("[Jev] JEV_API_KEY 未配置，技能决策降级为本地启发式路由");
+    }
+    return null;
+  }
 
   try {
     const controller = new AbortController();
