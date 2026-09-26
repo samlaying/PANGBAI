@@ -24,11 +24,26 @@ export interface DocumentWithFrontmatter {
 }
 
 /**
+ * Frontmatter 契约的单一事实源：
+ * 服务端 parseFrontmatter、客户端 block-parser、质量门禁三处必须使用同一语义 ——
+ * `---` 分隔行锚定在（去除首尾空白后的）全文开头。
+ */
+export const FRONTMATTER_RE = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/;
+
+/**
+ * 判断文本是否携带满足契约的 frontmatter 块（与两端解析器同构）
+ */
+export function hasFrontmatterBlock(markdown: string): boolean {
+  return FRONTMATTER_RE.test(markdown.replace(/\r\n/g, "\n").trim());
+}
+
+/**
  * 解析带有 --- YAML --- 头部的 Markdown 内容
  */
 export function parseFrontmatter(markdown: string): DocumentWithFrontmatter {
-  const normalized = markdown.replace(/\r\n/g, "\n");
-  const match = normalized.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
+  // trim 对齐客户端 block-parser 的预处理（客户端在匹配前 trim 全文）
+  const normalized = markdown.replace(/\r\n/g, "\n").trim();
+  const match = normalized.match(FRONTMATTER_RE);
 
   if (!match) {
     return {

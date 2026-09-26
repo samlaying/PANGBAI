@@ -17,6 +17,9 @@ import {
   classifyRunOutcome,
   createSseEmitter,
   estimateTokens,
+  isDocSkill,
+  headGateCheck,
+  type GateReport,
 } from "@/server/harness";
 import { parseFrontmatter } from "@/server/artifacts/frontmatter";
 
@@ -174,7 +177,6 @@ export async function POST(req: NextRequest) {
         const emitter = createSseEmitter(controller, encoder);
         let clientDisconnected = false;
         let streamError: unknown;
-        let gateModified = false;
         let capturedUsage:
           | { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
           | undefined;
@@ -202,81 +204,164 @@ export async function POST(req: NextRequest) {
           });
         }
 
-        const reader = upstreamRes.body!.getReader();
-        let buffer = "";
+        /**
+         * 消费上游 SSE 流并转发 message.delta。
+         * headGate=true 时先缓冲流头，直至 frontmatter 契约可判定再放行；
+         * 违约时停止消费（由调用方发起一次修正重试）。
+         * 读流异常向上抛出，由外层统一分类为 upstream_error。
+         */
+        const consumeUpstream = async (
+          res: Response,
+          headGate: boolean,
+        ): Promise<{ clientDisconnected: boolean; violation: boolean }> => {
+          const reader = res.body!.getReader();
+          let sseBuffer = "";
+          let headBuffer: string | null = headGate ? "" : null;
+          let violation = false;
 
-        try {
-          readLoop: while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
+          try {
+            readLoop: while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
 
-            buffer += decoder.decode(value, { stream: true });
-            let newlineIdx = buffer.indexOf("\n");
+              sseBuffer += decoder.decode(value, { stream: true });
+              let newlineIdx = sseBuffer.indexOf("\n");
 
-            while (newlineIdx !== -1) {
-              const line = buffer.slice(0, newlineIdx).trim();
-              buffer = buffer.slice(newlineIdx + 1);
-              newlineIdx = buffer.indexOf("\n");
+              while (newlineIdx !== -1) {
+                const line = sseBuffer.slice(0, newlineIdx).trim();
+                sseBuffer = sseBuffer.slice(newlineIdx + 1);
+                newlineIdx = sseBuffer.indexOf("\n");
 
-              if (!line.startsWith("data:")) continue;
-              const jsonStr = line.slice(5).trim();
-              if (!jsonStr || jsonStr === "[DONE]") continue;
+                if (!line.startsWith("data:")) continue;
+                const jsonStr = line.slice(5).trim();
+                if (!jsonStr || jsonStr === "[DONE]") continue;
 
-              try {
-                const parsed = JSON.parse(jsonStr);
+                try {
+                  const parsed = JSON.parse(jsonStr);
 
-                // 流末尾的真实 usage chunk（choices 为空）
-                if (parsed.usage && (!parsed.choices || parsed.choices.length === 0)) {
-                  capturedUsage = parsed.usage;
-                  continue;
-                }
-
-                const deltaContent = parsed.choices?.[0]?.delta?.content;
-                if (typeof deltaContent === "string" && deltaContent) {
-                  if (ttftMs === null) {
-                    ttftMs = Date.now() - startTime;
+                  // 流末尾的真实 usage chunk（choices 为空）
+                  if (parsed.usage && (!parsed.choices || parsed.choices.length === 0)) {
+                    capturedUsage = parsed.usage;
+                    continue;
                   }
-                  fullReply += deltaContent;
 
-                  // 5.3 标准推送 message.delta 事件；发射失败即客户端已断开
-                  const delivered = emitter.emit("message.delta", {
-                    type: "message.delta",
-                    messageId: assistantMsgId,
-                    delta: deltaContent,
-                    timestamp: Date.now(),
-                  });
-                  if (!delivered) {
-                    clientDisconnected = true;
-                    break readLoop;
+                  const deltaContent = parsed.choices?.[0]?.delta?.content;
+                  if (typeof deltaContent === "string" && deltaContent) {
+                    if (ttftMs === null) {
+                      ttftMs = Date.now() - startTime;
+                    }
+
+                    // 5.3 流头门禁缓冲：frontmatter 契约在头部几个 delta 即可判定
+                    if (headBuffer !== null) {
+                      headBuffer += deltaContent;
+                      const verdict = headGateCheck(headBuffer);
+                      if (verdict.decision === "violation") {
+                        violation = true;
+                        break readLoop;
+                      }
+                      if (verdict.decision === "pass") {
+                        const bufferedText = headBuffer;
+                        headBuffer = null;
+                        fullReply += bufferedText;
+                        const delivered = emitter.emit("message.delta", {
+                          type: "message.delta",
+                          messageId: assistantMsgId,
+                          delta: bufferedText,
+                          timestamp: Date.now(),
+                        });
+                        if (!delivered) return { clientDisconnected: true, violation: false };
+                      }
+                      continue;
+                    }
+
+                    fullReply += deltaContent;
+                    const delivered = emitter.emit("message.delta", {
+                      type: "message.delta",
+                      messageId: assistantMsgId,
+                      delta: deltaContent,
+                      timestamp: Date.now(),
+                    });
+                    if (!delivered) {
+                      return { clientDisconnected: true, violation: false };
+                    }
                   }
+                } catch {
+                  // 忽略非完整 JSON 行
                 }
-              } catch {
-                // 忽略非完整 JSON 行
               }
+            }
+          } finally {
+            try {
+              await reader.cancel();
+            } catch {
+              // 上游流已关闭
+            }
+          }
+
+          // 流结束仍未判定（如全文恰为 "---"）：放行剩余缓冲，交由流后门禁修复
+          if (headBuffer !== null && headBuffer.length > 0 && !violation) {
+            fullReply += headBuffer;
+            emitter.emit("message.delta", {
+              type: "message.delta",
+              messageId: assistantMsgId,
+              delta: headBuffer,
+              timestamp: Date.now(),
+            });
+          }
+
+          return { clientDisconnected: false, violation };
+        };
+
+        // 5.4 消费上游；文档技能启用流头门禁，违约时携带反馈信息重试一次
+        const docSkill = isDocSkill(jevDecision.choice);
+        let gateRetried = false;
+        try {
+          const first = await consumeUpstream(upstreamRes, docSkill);
+          clientDisconnected = first.clientDisconnected;
+
+          if (!clientDisconnected && first.violation) {
+            gateRetried = true;
+            // 丢弃首轮头部；TTFT 以用户可见首字节计，重置后由重试首字节重新起算
+            fullReply = "";
+            ttftMs = null;
+
+            const retryPayload: Record<string, unknown> = {
+              ...payload,
+              messages: [
+                ...(payload.messages as unknown[]),
+                {
+                  role: "user",
+                  content:
+                    "上一次输出未以 YAML Frontmatter 开头，违反了输出契约。请重新完整输出：第一行必须是 ---，随后依次是 title、type、expected_solution 字段，闭合 --- 之后再输出正文，不要输出任何开场白或解释。",
+                },
+              ],
+            };
+
+            const retryRes = await callUpstream(retryPayload);
+            if (!retryRes.ok || !retryRes.body) {
+              streamError = new Error(`gate retry upstream error: ${retryRes.status}`);
+            } else {
+              const second = await consumeUpstream(retryRes, false);
+              clientDisconnected = clientDisconnected || second.clientDisconnected;
             }
           }
         } catch (err) {
           streamError = err;
-        } finally {
-          try {
-            await reader.cancel();
-          } catch {
-            // 上游流已关闭
-          }
         }
 
         // 6. 【流式质量门禁与契约校验】：修复 YAML Frontmatter 与引用卡片格式
         //    门禁失败不视为回合失败：原文即终稿，仅记录错误
+        let gateReport: GateReport = { violations: [], repairs: [], retried: gateRetried };
         if (!clientDisconnected && streamError === undefined) {
           try {
             const knownPeopleList = await db.select({ id: people.id, name: people.name }).from(people);
-            const gated = QualityGate.processOutput(fullReply, {
+            const { text: gated, report } = QualityGate.processOutput(fullReply, {
               activeSkill: jevDecision.choice,
               knownPeople: knownPeopleList,
             });
+            gateReport = { ...report, retried: gateRetried };
             if (gated !== fullReply) {
               fullReply = gated;
-              gateModified = true;
               // 终稿同步：保证用户所见 == 落库 == artifact 内容
               emitter.emit("message.final", {
                 type: "message.final",
@@ -308,7 +393,7 @@ export async function POST(req: NextRequest) {
             console.error("Artifact detection error:", docErr);
           }
 
-          // 8. 闭环技能调用事件 tool.result
+          // 8. 闭环技能调用事件 tool.result（附带门禁报告，不再裸 success）
           if (jevDecision.choice !== "direct_chat") {
             emitter.emit("tool.result", {
               type: "tool.result",
@@ -317,6 +402,7 @@ export async function POST(req: NextRequest) {
                 status: "success",
                 skill: jevDecision.choice,
                 summary: jevDecision.rationale,
+                gate: gateReport,
               },
               status: "success",
               timestamp: Date.now(),
@@ -325,10 +411,16 @@ export async function POST(req: NextRequest) {
         }
 
         // 9. 终态结算：idle != turn success，按真实信号分类裁决
+        const gateRetryExhausted =
+          gateRetried &&
+          gateReport.violations.some(
+            (v) => v.kind === "frontmatter_missing" || v.kind === "frontmatter_not_at_start",
+          );
         const outcome = classifyRunOutcome({
           clientDisconnected: clientDisconnected || responseCancelled || req.signal.aborted,
           streamError,
           replyChars: fullReply.length,
+          gateRetryExhausted,
         });
 
         if (outcome.status !== "success") {
@@ -356,7 +448,7 @@ export async function POST(req: NextRequest) {
             completionTokens,
             totalTokens,
           },
-          metadata: gateModified ? { gate: { modified: true } } : undefined,
+          metadata: { gate: gateReport },
           timestamp: Date.now(),
         });
 
@@ -458,7 +550,7 @@ export async function POST(req: NextRequest) {
               jevScore: jevDecision.score,
               finishReason: outcome.finishReason,
               usageSource: capturedUsage ? "provider" : "estimated",
-              gateModified,
+              gate: gateReport,
             }),
           });
         } catch (dbErr) {
