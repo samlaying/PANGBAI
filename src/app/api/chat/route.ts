@@ -6,8 +6,6 @@ import { eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import {
   runJevDecision,
-  generateInitialTodoList,
-  updatePlanningState,
   assembleHarnessContext,
   pruneMessagesForTokenBudget,
   QualityGate,
@@ -72,29 +70,17 @@ export async function POST(req: NextRequest) {
       activeCanvas,
     });
 
-    // 2. 【任务规划状态机】：复杂任务 (score >= 60) 激活独立 TodoList 状态
-    let todoList = undefined;
-    if (jevDecision.score >= 60) {
-      todoList = generateInitialTodoList(jevDecision.choice, userQuery);
-      updatePlanningState(currentSessionId, {
-        todoList,
-        activeSkill: jevDecision.choice,
-        complexityScore: jevDecision.score,
-      });
-    }
-
-    // 3. 【上下文工程引擎】：按 Token 预算动态 Load，并执行 20K Offload 剪裁
+    // 2. 【上下文工程引擎】：按 Token 预算动态拼装各抽屉
     const systemPrompt = await assembleHarnessContext({
       sessionId: currentSessionId,
       projectId: targetProjectId,
       activeCanvas,
       profile,
       jevDecision,
-      todoList,
       userQuery,
     });
 
-    // 4. 【多轮压缩与 85% 窗口保底】：剪裁中间历史，保证不爆上下文
+    // 3. 【多轮压缩预算保底】：剪裁中间历史，保证不爆上下文
     const prunedMessages = pruneMessagesForTokenBudget(messages, 12000);
 
     const apiKey = process.env.SILICONFLOW_API_KEY;

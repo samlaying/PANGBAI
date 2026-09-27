@@ -5,13 +5,15 @@
  * 废除脆弱的正则假演进 (confidence + 0.02)，采用真实语义反思：
  * 1. 识别对话中涉及的干系人（支持已有干系人与新干系人自动发现）
  * 2. 提炼其真实行为模式 (Pattern) 与事实观察 (Observation)，优先用《职场提升》战法框架的概念体系定性
- * 3. 同轮提取用户自身的辅导偏好信号（风格微调/行业细节/沟通雷区），沉淀为待确认候选
- * 4. 评估置信度与证据强度，持久化至 PostgreSQL (evidence / person_models / memory_candidates)
- * 5. 产出标准 memory.candidate 事件供前端渲染
+ * 3. 同轮提取用户自身的辅导偏好信号（风格微调/行业细节/沟通雷区）
+ * 4. 全部产出仅进入 memory_candidates（status=pending）：evidence / person_models 的
+ *    写入只发生在用户确认后的 confirmMemoryToDatabase 事务中——不做任何未确认落库，
+ *    更不做"人名命中即编造 0.8 置信度证据"的兜底
+ * 5. 产出标准 memory.candidate 事件供前端渲染确认
  */
 
 import { db } from "@/db/client";
-import { people, personModels, evidence, memoryCandidates } from "@/db/schema";
+import { people, memoryCandidates } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { matchPlaybooks } from "@/server/knowledge/playbook-matcher";
@@ -171,30 +173,12 @@ ${frameworkBlock}
         return { insights: JSON.parse(arrMatch[0]) as ExtractedPersonInsight[], preferences: [] };
       }
     }
-  } catch {
-    // 降级兜底
+  } catch (err) {
+    console.warn("WorkplaceCRM: insight extraction LLM failed, skipping this turn:", err);
   }
 
-  // 兜底启发式规则：若文本显式出现人名
-  for (const p of existingPeople) {
-    if (p.id === USER_SELF_PERSON_ID) continue;
-    if (input.userMessage.includes(p.name) || input.assistantReply.includes(p.name)) {
-      return {
-        insights: [
-          {
-            personId: p.id,
-            personName: p.name,
-            observation: input.userMessage.slice(0, 60),
-            inferredPattern: "沟通协作与推进过程中的关键行为表现",
-            confidence: 0.8,
-            rationale: "基于当前对话上下文的实时因果推断",
-          },
-        ],
-        preferences: [],
-      };
-    }
-  }
-
+  // 诚实降级：提取失败（超时/非 200/解析失败）即本轮无产出。
+  // 不做"人名命中即编造高置信度证据"的兜底——那会污染整个产品赖以成立的证据链。
   return { insights: [], preferences: [] };
 }
 
@@ -223,7 +207,7 @@ export async function runWorkplaceCRMPipeline(input: WorkplaceCRMInput): Promise
     const { insights, preferences } = await extractInsightsWithLLM(input);
 
     for (const item of insights) {
-      // 1. 若为新干系人，先自动建档
+      // 1. 若为新干系人，先自动建档（确认事务要求人物必须已存在）
       const existing = await db.select().from(people).where(eq(people.id, item.personId)).limit(1);
       if (existing.length === 0) {
         await db.insert(people).values({
@@ -236,43 +220,8 @@ export async function runWorkplaceCRMPipeline(input: WorkplaceCRMInput): Promise
         });
       }
 
-      // 2. 沉淀至因果证据库 (evidence)，source 编码战法引用以便按类目反查
-      const evId = `ev_${randomUUID().slice(0, 8)}`;
-      await db.insert(evidence).values({
-        id: evId,
-        personId: item.personId,
-        projectId: input.projectId,
-        observation: item.observation,
-        rationale: item.rationale,
-        source: item.framework ? `实时对话推演 · 战法:${item.framework}` : "实时对话推演",
-        dateStr: "刚刚",
-      });
-
-      // 3. 沉淀或演进人物行为模式 (person_models)
-      const existingModels = await db.select().from(personModels).where(eq(personModels.personId, item.personId)).limit(1);
-      if (existingModels.length > 0) {
-        const m = existingModels[0];
-        const newConfidence = Math.min(0.98, Math.max(m.confidence, item.confidence));
-        await db
-          .update(personModels)
-          .set({
-            evidenceCount: m.evidenceCount + 1,
-            confidence: newConfidence,
-            lastObservedAt: "刚刚",
-          })
-          .where(eq(personModels.id, m.id));
-      } else {
-        await db.insert(personModels).values({
-          id: `pm_${randomUUID().slice(0, 8)}`,
-          personId: item.personId,
-          pattern: item.inferredPattern,
-          confidence: item.confidence,
-          evidenceCount: 1,
-          lastObservedAt: "刚刚",
-        });
-      }
-
-      // 4. 插入记忆候选池 (memory_candidates) 供前端审核或点亮小蓝点
+      // 2. 仅进入候选池（pending）。evidence / person_models 的写入只发生在
+      //    用户确认后的 confirmMemoryToDatabase 事务中，确认按钮是真实闸门。
       const candidateId = `cand_${randomUUID().slice(0, 8)}`;
       await db.insert(memoryCandidates).values({
         id: candidateId,
@@ -283,26 +232,16 @@ export async function runWorkplaceCRMPipeline(input: WorkplaceCRMInput): Promise
         inferredPattern: item.framework ? `${item.inferredPattern}（${item.framework}）` : item.inferredPattern,
         confidence: item.confidence,
         rationale: item.rationale,
-        status: "confirmed",
+        status: "pending",
       });
       item.candidateId = candidateId;
     }
 
-    // 5. 偏好信号：建档「我」→ 落证据 → 进候选池（pending，待用户确认后写回辅导设定）
+    // 3. 偏好信号：建档「我」→ 进候选池（pending）。确认前同样不落 evidence。
     if (preferences && preferences.length > 0) {
       await ensureUserSelfProfile();
       for (const pref of preferences) {
         if (!pref || !pref.observation || !pref.guidance) continue;
-
-        await db.insert(evidence).values({
-          id: `ev_${randomUUID().slice(0, 8)}`,
-          personId: USER_SELF_PERSON_ID,
-          projectId: input.projectId,
-          observation: pref.observation,
-          rationale: pref.guidance,
-          source: `偏好信号 · ${PREFERENCE_KIND_LABELS[pref.kind] || pref.kind}`,
-          dateStr: "刚刚",
-        });
 
         const candidateId = `cand_${randomUUID().slice(0, 8)}`;
         await db.insert(memoryCandidates).values({

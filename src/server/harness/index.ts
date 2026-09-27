@@ -4,7 +4,6 @@
 
 export * from "./jev-decision";
 export * from "./skill-registry";
-export * from "./planning-state";
 export * from "./context-engine";
 export * from "./quality-gate";
 export * from "./workplace-crm-worker";

@@ -1,14 +1,14 @@
 /**
  * PANGBAI Agent Harness · 上下文工程引擎 (Context Engineering Engine)
  *
- * 遵循 Harness Engineering 四大标准工程流程：
- * 1. Load: 按 Token 预算动态拼装各抽屉 (Drawer 0~3) 与渐进式 Skill
+ * 遵循 Harness Engineering 标准工程流程：
+ * 1. Load: 按 Token 预算动态拼装各抽屉 (Drawer) 与渐进式 Skill
  * 2. Compress:
- *    - Offload: 单个大文档 > 20K Tokens 自动剪裁至临时文件，上下文中仅保留路径与前 10 行预览
- *    - Active Summarization: 超过 6 轮时主动压缩早期会话为备忘录
- *    - Auto Fallback: 85% 上下文安全水位兜底截断
- * 3. Isolation: Planning 状态机隔离存储，不放入 messages 避免被摘要
- * 4. Storage: 偏好与世界模型跨会话持久化
+ *    - Truncate: 单个大文档估算超 20K Tokens 时头尾保留 + 中段省略标注
+ *      （诚实截断：不做摘要归纳，也不假装模型能读回被省略的内容）
+ *    - Prune: 历史消息估算超预算时，中间轮以逐轮中性存根替换
+ *      （机械存根：不宣称任何共识或结论）
+ * 3. Storage: 偏好与世界模型跨会话持久化（经用户确认后生效）
  */
 
 import { db } from "@/db/client";
@@ -16,12 +16,9 @@ import { people, personModels, projects, events } from "@/db/schema";
 import { eq, inArray, desc } from "drizzle-orm";
 import { INDUSTRY_OPTIONS, COACHING_STYLE_OPTIONS, type WorkspaceProfile } from "@/config/workspace-profile";
 import { getSkillsSummaryForContext, getActiveSkillAddendum } from "./skill-registry";
-import { formatTodoListPrompt, type TodoItem } from "./planning-state";
 import { JevDecision } from "./jev-decision";
 import { matchPlaybooks, formatPlaybooksForContext } from "@/server/knowledge/playbook-matcher";
-import * as fs from "node:fs";
-import * as path from "node:path";
-import * as os from "node:os";
+import { estimateTokens } from "./tokens";
 
 export interface ContextAssembleParams {
   sessionId: string;
@@ -30,47 +27,36 @@ export interface ContextAssembleParams {
   activeCanvas?: { title: string; content: string; doc_type?: string } | null;
   profile?: Partial<WorkspaceProfile>;
   jevDecision?: JevDecision;
-  todoList?: TodoItem[];
   userQuery?: string;
 }
 
-const OFFLOAD_DIR = path.join(os.tmpdir(), "pangbai_harness_offload");
-try {
-  if (!fs.existsSync(OFFLOAD_DIR)) {
-    fs.mkdirSync(OFFLOAD_DIR, { recursive: true });
-  }
-} catch {
-  // ignore
-}
-
 /**
- * Offload 剪裁机制：若文本超过 20,000 Tokens (约 60,000 字符)，落盘并返回精简预览
+ * 上下文预算截断：估算超 20K Tokens 的文档保留头尾并显式标注省略段。
+ * 不写临时文件——模型没有任何工具能把落盘内容读回来，那种"自主调阅"不会发生。
  */
-export function offloadIfExceeds20KTokens(text: string, titleHint = "doc"): string {
-  const approxTokens = Math.ceil(text.length / 3);
-  if (approxTokens < 20000) {
+export function truncateForContext(text: string, headLines = 40, tailLines = 20): string {
+  if (estimateTokens(text) < 20000) {
     return text;
   }
 
-  const filename = `offload_${Date.now()}_${titleHint.replace(/[^a-zA-Z0-9_\u4e00-\u9fa5]/g, "_").slice(0, 30)}.md`;
-  const filePath = path.join(OFFLOAD_DIR, filename);
+  const lines = text.split("\n");
+  if (lines.length > headLines + tailLines) {
+    const omitted = lines.length - headLines - tailLines;
+    return `${lines.slice(0, headLines).join("\n")}
 
-  try {
-    fs.writeFileSync(filePath, text, "utf-8");
-  } catch (err) {
-    console.error("Failed to offload document to scratchpad:", err);
-    return text.slice(0, 60000) + "\n\n...(内容过长已截断)...";
+【Harness 上下文预算保护：中段约 ${omitted} 行已省略，未做任何摘要归纳；完整内容以右侧 Canvas 活文档为准】
+
+${lines.slice(-tailLines).join("\n")}`;
   }
 
-  const lines = text.split("\n");
-  const first10Lines = lines.slice(0, 10).join("\n");
+  // 行数不多但单行超长：按字符头尾保留
+  const head = text.slice(0, 30000);
+  const tail = text.slice(-10000);
+  return `${head}
 
-  return `[Harness 保护机制触发: 该输入/文档超过 20K Tokens (${approxTokens} Tokens)，已自动 Offload 归档至临时文件: ${filePath}]
-以下为该文档前 10 行预览内容：
-----------------------------------------
-${first10Lines}
-----------------------------------------
-(大模型如需深入查阅特定章节，请在回答中指明目标章节)`;
+【Harness 上下文预算保护：中段约 ${Math.max(text.length - 40000, 0)} 字符已省略，未做任何摘要归纳；完整内容以右侧 Canvas 活文档为准】
+
+${tail}`;
 }
 
 const BASE_PHILOSOPHY = `你是「旁白」，一位清醒、真诚、懂职场人性的 AI 职场导师。
@@ -95,7 +81,7 @@ const BASE_PHILOSOPHY = `你是「旁白」，一位清醒、真诚、懂职场�
    ## 3. 关键里程碑排期
    ## 4. 风险排查与 Plan B 兜底策略
 3. 【实体引用与因果溯源（关键！）】：
-   - 引用真实世界模型中的人物时，必须使用标准超链接语法 [姓名](person:ID)，如 [李雷](person:user_id)。
+   - 引用真实世界模型中的人物时，必须使用标准超链语法 [姓名](person:ID)，如 [李雷](person:user_id)。
    - 当分析某人言行并发现历史上有过类似事件时，你必须主动引用真实历史证据：
      * [具体事件或时间描述](evidence:ID)，例如 [7月8日也发生过一次](evidence:ev_004)
    - 这样用户点击超链接即可穿透查看你做出该推断的前因后果与事实证据。`;
@@ -110,7 +96,6 @@ export async function assembleHarnessContext(params: ContextAssembleParams): Pro
     activeCanvas,
     profile,
     jevDecision,
-    todoList,
     userQuery = "",
   } = params;
 
@@ -148,12 +133,7 @@ ${coachingNotesBlock}请在后续沟通与方案产出中严格贯穿该行业�
     }
   }
 
-  // 4. Planning 状态机独立 Key 注入 (不放入 messages)
-  if (todoList && todoList.length > 0) {
-    prompt += `\n\n${formatTodoListPrompt(todoList)}`;
-  }
-
-  // 5. 干系人与世界模型 JIT 供给 (Drawer 1)
+  // 4. 干系人与世界模型 JIT 供给 (Drawer 1)
   try {
     let targetPeopleIds: string[] = [];
 
@@ -193,7 +173,7 @@ ${coachingNotesBlock}请在后续沟通与方案产出中严格贯穿该行业�
     console.error("ContextEngine: Failed to fetch stakeholders:", err);
   }
 
-  // 5b. 战法武器库 JIT 检索 (Drawer 1 增强：《职场提升》语料战法卡按需注入)
+  // 4b. 战法武器库 JIT 检索 (Drawer 1 增强：《职场提升》语料战法卡按需注入)
   if (userQuery) {
     const matchedPlaybooks = matchPlaybooks(userQuery, 2);
     if (matchedPlaybooks.length > 0) {
@@ -201,9 +181,9 @@ ${coachingNotesBlock}请在后续沟通与方案产出中严格贯穿该行业�
     }
   }
 
-  // 6. 激活的 Canvas 上下文与 20K Offload 剪裁 (Drawer 3)
+  // 5. 激活的 Canvas 上下文与预算截断 (Drawer 3)
   if (activeCanvas && activeCanvas.content) {
-    const processedCanvasContent = offloadIfExceeds20KTokens(activeCanvas.content, activeCanvas.title);
+    const processedCanvasContent = truncateForContext(activeCanvas.content);
     prompt += `\n\n【用户当前在右侧 Canvas 打开并聚焦的活文档】:
 - 文档标题: ${activeCanvas.title}
 - 文档类型: ${activeCanvas.doc_type || "prd/markdown"}
@@ -211,7 +191,7 @@ ${coachingNotesBlock}请在后续沟通与方案产出中严格贯穿该行业�
 ${processedCanvasContent}`;
   }
 
-  // 7. 近期事实素材切片 (Drawer 4: 群聊/会议/评审/事件)
+  // 6. 近期事实素材切片 (Drawer 4: 群聊/会议/评审/事件)
   try {
     const recentEvents = projectId
       ? await db.select().from(events).where(eq(events.projectId, projectId)).orderBy(desc(events.createdAt)).limit(5)
@@ -233,7 +213,8 @@ ${processedCanvasContent}`;
 }
 
 /**
- * 历史消息主动摘要与 85% 窗口保底压缩
+ * 历史消息预算裁剪：估算超限时保留首轮背景与最新 4 条，
+ * 中间轮以逐轮中性存根替换——机械省略，不伪造任何共识或结论。
  */
 export function pruneMessagesForTokenBudget(
   rawMessages: Array<{ role: string; content: string }>,
@@ -243,23 +224,20 @@ export function pruneMessagesForTokenBudget(
     return rawMessages || [];
   }
 
-  const totalChars = rawMessages.reduce((sum, m) => sum + (m.content?.length || 0), 0);
-  const estTokens = Math.ceil(totalChars / 3);
+  const estTokens = estimateTokens(rawMessages.map((m) => m.content || "").join(""));
 
   if (estTokens <= maxAllowedTokens) {
     return rawMessages;
   }
 
-  // 超过 85% 安全水位：保留第 1 轮沟通（首要背景）与最新 3 轮交互，中间部分进行主动压缩
   const firstUser = rawMessages[0];
   const tailMessages = rawMessages.slice(-4);
   const middleMessages = rawMessages.slice(1, -4);
 
-  const middleSummary = `[Harness 自动摘要机制: 历史会话共 ${middleMessages.length} 轮已主动浓缩，已妥善达成共识并推动至当前状态]`;
+  const stubMessages = middleMessages.map((m) => ({
+    role: m.role,
+    content: `[历史内容已因上下文预算省略 | ${m.role === "user" ? "用户" : "导师"}原话开头: ${(m.content || "").slice(0, 40)}… | 此为机械存根，不代表双方已达成任何共识或结论]`,
+  }));
 
-  return [
-    firstUser,
-    { role: "assistant", content: middleSummary },
-    ...tailMessages,
-  ];
+  return [firstUser, ...stubMessages, ...tailMessages];
 }
