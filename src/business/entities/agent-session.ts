@@ -77,12 +77,21 @@ export class AgentSession {
     try {
       // 当前用户消息和 assistant 占位都已加入列表，先移除这两条，
       // 再在请求末尾单独追加当前输入，避免重复发送。
+      // assistant 历史发送真实正文（每轮截断），而非固定占位串——
+      // 否则模型永远看不到自己上一轮说了什么，服务端的裁剪存根也无真实内容可用。
       const history = this.messages.slice(0, -2).map((m) => {
-        const textPart = m.parts.find((p) => p.type === "text");
-        return {
-          role: m.role,
-          content: m.role === "user" ? (textPart?.type === "text" ? textPart.text : "") : "已提供建议",
-        };
+        const textParts = m.parts.filter((p) => p.type === "text");
+        if (m.role === "user") {
+          const first = textParts[0];
+          return { role: m.role, content: first?.type === "text" ? first.text : "" };
+        }
+        const fullText = textParts
+          .map((p) => (p.type === "text" ? p.text : ""))
+          .join("\n")
+          .trim();
+        const content =
+          fullText.length > 500 ? `${fullText.slice(0, 500)}…（该轮后文已省略）` : fullText || "（该轮无正文）";
+        return { role: m.role, content };
       });
 
       await sseTransport.stream(
