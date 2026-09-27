@@ -205,6 +205,45 @@ export async function POST(req: NextRequest) {
           let headBuffer: string | null = headGate ? "" : null;
           let violation = false;
 
+          const processDelta = (deltaContent: string): "ok" | "disconnected" | "violation" => {
+            if (ttftMs === null) {
+              ttftMs = Date.now() - startTime;
+            }
+
+            if (headBuffer !== null) {
+              headBuffer += deltaContent;
+              const verdict = headGateCheck(headBuffer);
+              if (verdict.decision === "violation") {
+                violation = true;
+                return "violation";
+              }
+              if (verdict.decision === "pass") {
+                const bufferedText = headBuffer;
+                headBuffer = null;
+                fullReply += bufferedText;
+                return emitter.emit("message.delta", {
+                  type: "message.delta",
+                  messageId: assistantMsgId,
+                  delta: bufferedText,
+                  timestamp: Date.now(),
+                })
+                  ? "ok"
+                  : "disconnected";
+              }
+              return "ok";
+            }
+
+            fullReply += deltaContent;
+            return emitter.emit("message.delta", {
+              type: "message.delta",
+              messageId: assistantMsgId,
+              delta: deltaContent,
+              timestamp: Date.now(),
+            })
+              ? "ok"
+              : "disconnected";
+          };
+
           try {
             readLoop: while (true) {
               const { done, value } = await reader.read();
@@ -233,46 +272,37 @@ export async function POST(req: NextRequest) {
 
                   const deltaContent = parsed.choices?.[0]?.delta?.content;
                   if (typeof deltaContent === "string" && deltaContent) {
-                    if (ttftMs === null) {
-                      ttftMs = Date.now() - startTime;
-                    }
-
-                    // 5.3 流头门禁缓冲：frontmatter 契约在头部几个 delta 即可判定
-                    if (headBuffer !== null) {
-                      headBuffer += deltaContent;
-                      const verdict = headGateCheck(headBuffer);
-                      if (verdict.decision === "violation") {
-                        violation = true;
-                        break readLoop;
-                      }
-                      if (verdict.decision === "pass") {
-                        const bufferedText = headBuffer;
-                        headBuffer = null;
-                        fullReply += bufferedText;
-                        const delivered = emitter.emit("message.delta", {
-                          type: "message.delta",
-                          messageId: assistantMsgId,
-                          delta: bufferedText,
-                          timestamp: Date.now(),
-                        });
-                        if (!delivered) return { clientDisconnected: true, violation: false };
-                      }
-                      continue;
-                    }
-
-                    fullReply += deltaContent;
-                    const delivered = emitter.emit("message.delta", {
-                      type: "message.delta",
-                      messageId: assistantMsgId,
-                      delta: deltaContent,
-                      timestamp: Date.now(),
-                    });
-                    if (!delivered) {
-                      return { clientDisconnected: true, violation: false };
-                    }
+                    const result = processDelta(deltaContent);
+                    if (result === "disconnected") return { clientDisconnected: true, violation: false };
+                    if (result === "violation") break readLoop;
                   }
                 } catch {
                   // 忽略非完整 JSON 行
+                }
+              }
+            }
+
+            // Some upstreams close after a final data line without a trailing newline.
+            // Decode and process that line instead of silently dropping its delta.
+            sseBuffer += decoder.decode();
+            const trailingLine = sseBuffer.trim();
+            if (!violation && trailingLine.startsWith("data:")) {
+              const jsonStr = trailingLine.slice(5).trim();
+              if (jsonStr && jsonStr !== "[DONE]") {
+                try {
+                  const parsed = JSON.parse(jsonStr);
+                  if (parsed.usage && (!parsed.choices || parsed.choices.length === 0)) {
+                    capturedUsage = parsed.usage;
+                  } else {
+                    const deltaContent = parsed.choices?.[0]?.delta?.content;
+                    if (typeof deltaContent === "string" && deltaContent) {
+                      const result = processDelta(deltaContent);
+                      if (result === "disconnected") return { clientDisconnected: true, violation: false };
+                      if (result === "violation") violation = true;
+                    }
+                  }
+                } catch {
+                  // Ignore a malformed trailing line, matching the normal line path.
                 }
               }
             }
@@ -287,12 +317,13 @@ export async function POST(req: NextRequest) {
           // 流结束仍未判定（如全文恰为 "---"）：放行剩余缓冲，交由流后门禁修复
           if (headBuffer !== null && headBuffer.length > 0 && !violation) {
             fullReply += headBuffer;
-            emitter.emit("message.delta", {
+            const delivered = emitter.emit("message.delta", {
               type: "message.delta",
               messageId: assistantMsgId,
               delta: headBuffer,
               timestamp: Date.now(),
             });
+            if (!delivered) return { clientDisconnected: true, violation: false };
           }
 
           return { clientDisconnected: false, violation };

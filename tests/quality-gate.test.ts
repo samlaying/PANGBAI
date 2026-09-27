@@ -219,6 +219,15 @@ test("head-gate violation triggers one corrective retry and the violating text n
   assert.ok(events.some((e) => e.type === "artifact.suggested"));
 });
 
+test("chat preserves a final SSE data line that has no trailing newline", async () => {
+  const { events } = await runChat(
+    sseUpstreamSequence([{ events: [delta("最后一段").replace(/\n\n$/, "")] }]),
+    "请给我一句简短建议",
+  );
+
+  assert.ok(events.some((event) => event.type === "message.delta" && event.delta === "最后一段"));
+});
+
 test("retry-exhausted output falls back to synthetic repair with a degraded success verdict", async () => {
   // 两次都违约
   const { events } = await runChat(
