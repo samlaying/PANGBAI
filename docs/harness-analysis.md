@@ -1,7 +1,10 @@
-# PANGBAI · Agent Harness 架构分析
+# PANGBAI · Agent Harness 架构分析（现状版）
 
 > 每一轮对话，Harness 都在回答同一个问题：
 > **这一步，模型需要知道什么、能做什么、怎么评判好坏、不对时怎么办？**
+>
+> 本文档描述**代码的现状**，与《backend-harness-architecture.md》设计规范互为对照；
+> 两者冲突时以本文与代码为准。
 
 ---
 
@@ -11,166 +14,113 @@
 用户输入
    │
    ▼
-[AgentSession.send()]          ← 业务层：历史压缩 + 上下文收集
+[AgentSession.send()]          ← 业务层：组装历史（assistant 侧发送真实正文，每轮截断 500 字符）
    │
    ▼
-[context-assembler.ts]         ← Harness 核心：动态装配 System Prompt
-   │  Drawer 0：WorkspaceProfile（名称·风格·行业）
-   │  Drawer 1：干系人 + 行为模式 + 因果证据链（JIT 按需）
-   │  Drawer 2：项目空间（状态·风险·活文档）
-   │  Drawer 3：Canvas 工作文档（TOC + 内容切片）
+[POST /api/chat]               ← Harness 主通道
+   │  ① runJevDecision（TypeSafe API，1200ms 熔断；无 key/超时/失败 → 本地正则启发式）
+   │  ② assembleHarnessContext（Drawer 分层装配，见下）
+   │  ③ pruneMessagesForTokenBudget（12K token 预算，CJK 感知估算）
    ▼
-[POST /api/chat]               ← 传输层：流式 SSE → 前端实时渲染
+[LLM 生成 · DeepSeek-V3]       ← 模型推理（stream_options.include_usage 请求真实 usage）
    │
    ▼
-[LLM 生成 · DeepSeek-V3]      ← 模型推理
-   │
+[consumeUpstream + 流头门禁]    ← 文档技能缓冲流头，frontmatter 契约可判定即放行/违约
+   │  违约 → 取消上游 → 带修正指令重试一次 → 仍违约回退合成修复（gate_retry_exhausted）
    ▼
-[TransformStream / flush()]    ← 流结束后异步落库
-   │  ① session + messages 持久化
-   │  ② LLM Trace 记录（TTFT · tokens · latency）
-   │  ③ 因果演进：person pattern confidence +0.02
-   │  ④ 自动写入新 evidence 条目
+[QualityGate.processOutput]     ← 流后全文修复（quote 前缀剥离、实体超链回填）
+   │  改写文本 → 下发 message.final，保证 用户所见 == 落库 == artifact
+   │  结构化报告 → tool.result / run.finished.metadata / llmCallTraces
    ▼
-[block-parser.ts]              ← 输出解析：Markdown → 结构化 Parts
-   │  text / quote / artifact(YAML) / memory_candidate
+[classifyRunOutcome]            ← 终态裁决：success/aborted/failed × finishReason
+   │  失败 → run.error（先于 run.finished）；落库部分回复 + 真实 status trace
+   │  断连（req.signal / cancel() / enqueue 抛错）→ aborted，中断上游、跳过 CRM
    ▼
-[AgentBus → UI]                ← 前端响应：PersonPanel 实时刷新
+[Workplace CRM Worker]          ← 仅成功回合；抽取失败即空产出（不编造兜底）
+   │  人物洞察与偏好信号 → memory_candidates（一律 pending）
+   │  evidence / person_models 写入只发生在用户确认后的 confirmMemoryToDatabase 事务
+   ▼
+[block-parser.ts]               ← 输出解析：Markdown → 结构化 Parts
+   ▼
+[AgentBus → UI]                 ← 前端响应；确认按钮是真实闸门
 ```
 
 ---
 
 ## 四个核心问题 × Harness 的回答
 
----
-
 ### ① 模型需要知道什么？
-**Harness 提供：目标 · 约束 · 相关资料 · 当前状态**
 
 | Harness 层 | 代码位置 | 注入的内容 |
 |---|---|---|
-| **基础人格与约束** | `COACH_BASE_PHILOSOPHY` | 角色定义、格式契约（禁止口头伪动作）、实体引用规范 `[姓名](person:id)` |
-| **用户画像（Drawer 0）** | `workspace-profile.ts` → `assembleCoachContext` | 工作区名称、行业 contextNote、辅导风格 promptGuidance |
-| **干系人世界模型（Drawer 1）** | `people + personModels + evidence` 表 | 每个相关人的：角色·部门·关系·行为模式(置信度%)·最近3条因果证据 |
-| **项目空间（Drawer 2）** | `projects + projectArtifacts` 表 | 项目状态·进度·风险清单·旁白备忘·活文档 TOC |
-| **Canvas 双线协作（Drawer 3）** | `activeCanvas` 参数 | 当前正在编辑的文档全文（>3000字时截断+TOC） |
-| **对话历史** | `AgentSession.send()` L79-85 | 历史消息压缩（assistant 侧统一为"已提供建议"，节省 token） |
+| 基础人格与格式契约 | `context-engine.ts` BASE_PHILOSOPHY | 角色定义、Canvas/话术/实体链接三契约 |
+| 工作区画像（Drawer 0） | `assembleHarnessContext` | 名称·行业·风格·已确认辅导偏好 |
+| 技能元数据（常驻）+ 命中 SOP（JIT） | `skill-registry.ts` | 10 技能概览常驻；Jev 命中后注入完整 SOP |
+| 干系人世界模型（Drawer 1） | `context-engine.ts` | 项目干系人 JIT；无项目则兜底前 5 人 |
+| 战法语料卡（Drawer 1 增强） | `playbook-matcher.ts` | 按当前输入匹配 top-2 |
+| Canvas 活文档（Drawer 3） | `truncateForContext` | 估算 <20K token 全文；超限头尾保留 + 显式中段省略标注 |
+| 近期事实素材（Drawer 4） | events 表切片 | 项目内最近 5 条 / 全局 3 条，200 字预览 |
+| 对话历史 | `pruneMessagesForTokenBudget` | 估算 ≤12K token 原样；超限保留首轮 + 最新 4 条，中间轮逐轮中性存根（前 40 字，明示不代表共识） |
 
-**关键设计**：JIT（Just-In-Time）按需供给 —— 不是把所有人/项目全倾倒给模型，而是：
-- 有 `projectId` → 只加载该项目干系人
-- 有 `focusedPersonId` → 追加聚焦人
-- 都没有 → 兜底前 6 位
-- Token 预算约 **~2000** tokens（不含对话历史）
-
----
+Token 估算为 CJK 感知启发式（`tokens.ts`：中日韩 1 token/字，其余 4 字符/token）；trace 优先记录 provider 返回的真实 usage。
 
 ### ② 模型可以做什么？
-**Harness 提供：工具 · 执行环境 · 权限边界**
 
-当前模型的**输出能力**（通过格式契约实现的"工具"）：
+模型**没有任何执行通道**——LLM 请求不含 tools 字段，能力全部通过"格式即行动"实现：
 
 | 输出形态 | 触发方式 | 执行效果 |
 |---|---|---|
-| **普通建议** | 自然段落 / 列表 | `text` Part → ChatFlow 渲染 |
-| **建议话术卡片** | `> "话术内容"` 引用块 | `quote` Block → 高亮卡片，可一键复制 |
-| **Canvas 活文档** | YAML Frontmatter `---title/type/expected_solution---` | `artifact` Part → 右侧 Canvas 自动展开 |
-| **实体深链** | `[姓名](person:id)` `[事件](evidence:id)` | 可点击穿透到 PersonPanel / EvidenceModal |
-| **记忆候选沉淀** | `memory.candidate` 事件（协议预留） | `memory_candidate` Part → 人工确认后写库 |
-| **生成式 UI** | `ui.generative` 事件 | 渲染 metric_table / timeline_chart 等 |
+| 普通建议 | 自然段落/列表 | `text` Part 渲染 |
+| 建议话术卡片 | `> "话术"` 引用块 | `quote` Block，可复制 |
+| Canvas 活文档 | 文首 YAML Frontmatter | `artifact` Part → 右侧 Canvas 展开 |
+| 实体深链 | `[姓名](person:id)` | 点击穿透 PersonPanel / EvidenceModal |
+| 记忆候选 | 服务端 CRM 反思产出 | pending candidate → **用户确认后**才写 evidence/模型 |
+| 生成式 UI | `ui.generative` 事件 | metric_table / timeline_chart 等 |
 
-**权限边界（当前已实现）**：
-- 模型**不能**直接写数据库，只能输出 Markdown
-- 数据库写入全部在 `onStreamFinished()` 的服务端异步执行
-- `confirmMemoryToDatabase()` 需要用户点击确认才触发 —— **人机协同单键沉淀**
-
----
+权限边界是**结构性**的：模型写不了数据库；所有写入要么是服务端后置执行（session/message/trace），要么必须经过用户确认事务（`confirmMemoryToDatabase`，幂等）。人物洞察与偏好信号一律以 pending 候选呈现，确认按钮（忽略 ✕ / 确认 ✓ 两键）是唯一晋升入口。
 
 ### ③ 怎么知道做得对不对？
-**Harness 提供：测试 · 工具返回 · 结果校验**
 
-**实时信号（对话中）**：
-
-| 信号 | 来源 | 作用 |
+| 信号 | 来源 | 说明 |
 |---|---|---|
-| `TTFT`（首字延迟） | `chat/route.ts` L76-78 | 感知 LLM 响应速度 |
-| `llmCallTraces` 记录 | `onStreamFinished()` | 每次调用的 tokens·latency·charCount 全留底 |
-| `block-parser` 解析成功率 | `parseMarkdownToBlocksAndParts()` | 检测模型是否遵守格式契约（YAML Frontmatter 正确解析才打开 Canvas） |
-| 实体引用出现率 | `personMatch` 正则 L148 | 检测模型是否主动引用了干系人（有则触发 confidence 演进） |
+| 终态分类 | `run-outcome.ts` classifyRunOutcome | success/aborted/failed × finishReason（stop/empty_reply/client_disconnect/upstream_error/gate_retry_exhausted）；idle ≠ turn success |
+| run.error 事件 | chat route | 失败回合先发 run.error 再发 run.finished，客户端渲染中断提示 |
+| llmCallTraces | chat route | 真实 status、TTFT、真实 usage（provider 优先，估算兜底）、finishReason、门禁报告全留底 |
+| 流头门禁 | `quality-gate.ts` headGateCheck | frontmatter 契约在最初几个 delta 内判定，违约文本不触达用户 |
+| 门禁报告 | processOutput → {violations, repairs, retried} | 随 tool.result / run.finished / trace 下发 |
 
-**离线校验（测试套件）**：
-
-```
-tests/backend-runtime.test.ts (19 个用例)
-├── assembleCoachContext 注入 profile 内容验证
-├── 禁止硬编码 demo 人物（张明·王总·招聘 Agent）
-├── session/message/evidence 因果链持久化
-├── memory confirm 幂等性（确认两次只写一条）
-└── SSE 流切片重组正确性
-```
-
-**用户侧反馈（隐式校验）**：
-- PersonPanel 置信度 % 是否在对话后提升
-- Canvas 是否在模型输出 YAML 后自动打开
-- EvidenceModal 里的 rationale（心理归因）是否有意义
-
----
+离线校验（node:test + tsx，每文件独立进程 + PGlite）：
+`backend-runtime`（路由/持久化/确认幂等）、`chat-terminal-state`（五类终态场景）、`quality-gate`（门禁契约一致性回归）、`crm-honesty`（不编造/pending-only/确认晋升）、`context-honesty`（截断与存根诚实性）、`agent-session-final`（message.final/run.error 客户端语义）、`agent-history`（历史真实化）、`harness-utils`、`agent-runtime-layers`、`prompt-templates`、`proxy`。
 
 ### ④ 没做好接下来怎么办？
-**Harness 提供：重试 · 调整方案 · 补充信息 · 请求人工介入**
 
-| 场景 | 当前机制 | 不足 / 待补 |
+| 场景 | 当前机制 | 状态 |
 |---|---|---|
-| **API 上游失败** | `isRunning` 锁防重复；catch → 展示"请求失败，请检查服务配置后重试" | ❌ 无自动重试，无退避策略 |
-| **模型格式违约**（没输出 YAML / 口头伪动作） | `block-parser` 容错解包（strip ```markdown 外壳）；格式规范在 prompt 中反复约束 | ❌ 无格式校验后的纠错反馈 |
-| **干系人记忆不准** | 用户可在 PersonPanel 点击证据 → EvidenceModal 查看归因 | ❌ 无"标记不准确"→ 降低 confidence 的机制 |
-| **模型提炼的 pattern 不对** | `memory.candidate` 推送 → 用户单键确认/忽略 | ✅ 人机协同兜底 |
-| **Token 超出** | Canvas 内容截断 3000 字 + TOC；历史 assistant 压缩为"已提供建议" | ❌ 无动态裁剪策略（只有静态阈值） |
-| **数据库写入异步失败** | `catch(saveErr)` 打 console.error | ❌ 无告警、无补偿事务 |
+| 上游非 200（流开始前） | 502 快速失败 | ✅ |
+| 流中上游异常 | streamError 捕获 → run.error + failed trace + 部分回复落库 | ✅ |
+| 客户端断连 | req.signal 级联 + cancel() 兜底 + emitter 吞错 → aborted trace，中断上游、跳过 CRM | ✅ |
+| 空回复 | empty_reply 分类 + run.error | ✅ |
+| 文档技能格式违约 | 流头拦截 + 一次带反馈修正重试 + 合成修复回退（gate_retry_exhausted） | ✅ |
+| CRM 抽取失败（超时/解析失败） | 诚实空产出，不编造证据 | ✅ |
+| 记忆不准 | 用户逐条 忽略/确认；确认前不落任何 evidence | ✅ |
+| 网关不支持 stream_options | 识别 4xx 后去字段重发一次 | ✅ |
+| API 请求级自动重试 + 退避 | 无 | ❌ 路线图 |
+| confidence 负向调节（标记不准→降置信） | 无 | ❌ 路线图 |
+| 落库失败告警/补偿 | console.error 留底 | ❌ 路线图 |
+| 真 Function Calling（模型主动查证据/人物） | 无 tools 通道 | ❌ 路线图 |
 
 ---
 
-## 现有架构的核心张力
+## 设计的精髓
 
-```
-          ┌─────────────────────────────────────────┐
-          │             世界模型 (DB)                │
-          │  people · personModels · evidence        │
-          │  projects · artifacts · sessions         │
-          └──────────┬──────────────────┬────────────┘
-                     │  JIT读取          │  异步写入
-                     ▼                  ▼
-          ┌───────────────────┐  ┌─────────────────┐
-          │  Context Assembler│  │ onStreamFinished │
-          │  (每轮动态装配)   │  │ (流结束后落库)  │
-          └────────┬──────────┘  └────────┬────────┘
-                   │                      │
-                   ▼                      ▼
-          ┌───────────────────────────────────────────┐
-          │              LLM (DeepSeek-V3)            │
-          │   输入：~2000 token Harness + 对话历史    │
-          │   输出：Markdown（格式契约约束的"工具"）  │
-          └───────────────────────────────────────────┘
-                              │
-                    block-parser 解析
-                              │
-              ┌───────────────┼──────────────┐
-              ▼               ▼              ▼
-           text/quote     YAML artifact   memory.candidate
-           (渲染)         (→ Canvas)      (→ 人工确认)
-```
+模型没有工具调用，而是通过**格式契约**把输出变成可被解析的结构——YAML Frontmatter 即 Canvas 工具，`>` 引用即话术工具，`[人名](person:id)` 即实体查询工具。格式即行动，Markdown 即协议。本 Harness 的纪律是：**契约判定与两端解析器同源**（`FRONTMATTER_RE` 单一事实源）、**终态必须分类**、**未确认不落库**、**降级不编造**。
 
-**设计的精髓**：模型没有真正的"工具调用"，而是通过**格式契约**把输出变成可被解析的结构 —— YAML Frontmatter 就是 Canvas 工具，`>` 引用块就是"话术工具"，`[人名](person:id)` 就是实体查询工具。格式即行动，Markdown 即协议。
+## 历史包袱的清理记录（2026-09-27）
 
----
-
-## 下一步：Harness 可以补强的方向
-
-| 优先级 | 方向 | 具体 |
-|---|---|---|
-| 🔴 高 | **格式违约纠错** | 检测模型是否遵守契约，反馈给用户（"本次未生成 Canvas，因为..."） |
-| 🔴 高 | **confidence 负向调节** | 用户在 EvidenceModal 标记"归因不准" → `confidence - 0.05` |
-| 🟡 中 | **自动重试 + 退避** | 上游 502/503 时最多 2 次重试，指数退避 |
-| 🟡 中 | **动态 Token 裁剪** | 历史消息按 token 数滑动窗口，非固定截断 |
-| 🟡 中 | **干系人相关性排序** | 按当前对话关键词动态排序干系人优先级，而不是按 projectId 全量加载 |
-| 🟢 低 | **异步落库告警** | `onStreamFinished` 失败时写 notifications 表 → 前端展示 |
-| 🟢 低 | **真实 Function Calling** | 接入 DeepSeek 的 tool_use，让模型主动查询证据/人物，而不是靠 JIT 预装 |
+- 删除 `planning-state.ts`：`generateInitialTodoList` 无视用户输入返回硬编码模板（step_1 恒 completed / step_2 恒 in_progress），PLANNING_STORE 只写不读、无任何 UI/SSE 消费者——假进度比没有更糟。
+- 删除 tmpdir offload：模型无工具读回落盘文件，"自主调阅"无从发生；改为头尾截断 + 显式省略标注。
+- 删除中间历史固定文案"已妥善达成共识并推动至当前状态"：无论实际谈了什么都宣称共识达成；改为逐轮中性存根。
+- 删除 CRM 人名命中兜底（编造 0.8 置信度证据 + 万能 pattern 句）与 insights/preference 确认前直写 evidence/person_models：确认按钮从摆设变为真实闸门。
+- 删除 jev-decision 内嵌 API key 字面量（已随 abc8da2 推送视为泄露，密钥改 env-only 并轮换）。
+- 客户端 assistant 历史不再压成固定串"已提供建议"：模型此前从来看不到自己上一轮说了什么。
+- chars/3 token 估算（中文低估 2-3 倍，阈值形同虚设）→ CJK 感知估算 + provider 真实 usage 优先。

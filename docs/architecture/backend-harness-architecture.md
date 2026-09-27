@@ -1,8 +1,9 @@
 # PANGBAI（旁白）· 后端 Agent Harness 深度工程架构设计规范
 
-> **标准版本**：v2.0.0 (Harness Engineering 深度演化版)  
+> **标准版本**：v2.1.0 (2026-09-27 诚实化对齐版：本文档已逐节对齐实现，未实现的能力显式标注【路线图，未实现】)  
 > **设计基准**：严格贯彻《Harness Engineering 企业级多 Agent 协同实战》（马士兵/DeepAgents）与 DeepSeek Harness 架构方法论  
-> **核心世界观**：$\text{Agent} = \text{Model} + \text{Harness}$；$\text{Harness Engineering} \supset \text{Context Engineering} \supset \text{Prompt Engineering}$。
+> **核心世界观**：$\text{Agent} = \text{Model} + \text{Harness}$；$\text{Harness Engineering} \supset \text{Context Engineering} \supset \text{Prompt Engineering}$。  
+> **对照阅读**：`docs/harness-analysis.md` 为代码现状分析，两者冲突时以代码为准。
 
 ---
 
@@ -12,7 +13,7 @@
 3. [三、 Jev 决策层（TypeSafe Pre-Decision Layer）](#三-jev-决策层typesafe-pre-decision-layer)
 4. [四、 双轨制技能系统（Dual-Track Skill Registry）与渐进式披露](#四-双轨制技能系统dual-track-skill-registry与渐进式披露)
 5. [五、 上下文工程引擎（Context Engineering Engine）](#五-上下文工程引擎context-engineering-engine)
-6. [六、 任务规划状态机（Planning & State Isolation）](#六-任务规划状态机planning--state-isolation)
+6. [六、 任务规划状态机——已移除](#六-任务规划状态机planning--state-isolation已移除)
 7. [七、 流式质量门禁与契约拦截（Quality Gate & Format Interceptor）](#七-流式质量门禁与契约拦截quality-gate--format-interceptor)
 8. [八、 异步人物画像抽取引擎（Workplace CRM Worker）](#八-异步人物画像抽取引擎workplace-crm-worker)
 9. [九、 SSE 事件流协议与客户端流控生命周期](#九-sse-事件流协议与客户端流控生命周期)
@@ -40,13 +41,10 @@
 
 ```mermaid
 flowchart TD
-    UserReq["用户前端请求 (User Prompt + Canvas + SessionId)"] --> JevLayer["【Jev 决策层】(Sub-100ms 快速推理)"]
+    UserReq["用户前端请求 (User Prompt + Canvas + SessionId)"] --> JevLayer["【Jev 决策层】(TypeSafe API · 1200ms 熔断 · 失败降级本地启发式)"]
     
     subgraph JevEngine ["Jev TypeSafe Pre-Decision"]
         JevLayer --> |eval| DecisionRes["JevDecision { choice, need_tool, score }"]
-        DecisionRes --> ScoreCheck{"score >= 60 ? (复杂任务)"}
-        ScoreCheck -- Yes --> PlanAction["规划引擎 (write_todo 存入独立 State Key)"]
-        ScoreCheck -- No --> FastPath["快速直通模式 (Direct Path)"]
     end
 
     subgraph SkillRegistry ["双轨制技能系统 (Dual-Track Skill Registry)"]
@@ -56,33 +54,32 @@ flowchart TD
     end
 
     subgraph ContextEngine ["上下文工程引擎 (Context Engineering)"]
-        PlanAction --> Assemble["动态上下文加载 (Load Pipeline)"]
-        FastPath --> Assemble
-        Track1 --> Assemble
+        Track1 --> Assemble["动态上下文加载 (Drawer 分层装配)"]
         Track2 --> Assemble
         
-        Assemble --> TokenBudget{"Token 总量 > 20K ?"}
-        TokenBudget -- Yes --> Offload["Offload 机制 (写入 Scratchpad，保留路径与10行预览)"]
-        TokenBudget -- No --> WindowBudget{"窗口占比 >= 85% ?"}
-        WindowBudget -- Yes --> AutoSummary["保底自动摘要 (Auto Summarization)"]
+        Assemble --> TokenBudget{"单文档估算 > 20K Tokens ?"}
+        TokenBudget -- Yes --> Truncate["诚实截断 (头尾保留 + 中段省略标注，不落盘)"]
+        TokenBudget -- No --> WindowBudget{"历史估算 > 12K Tokens ?"}
+        WindowBudget -- Yes --> Prune["预算裁剪 (首轮 + 最新4条保留，中间轮逐轮中性存根)"]
         WindowBudget -- No --> ContextReady["最终执行上下文就绪"]
     end
 
     subgraph ExecutionGate ["模型执行与质量门禁"]
-        ContextReady --> LLMGateway["模型网关 (DeepSeek-V3 / SiliconFlow，流式生成)"]
-        LLMGateway --> StreamInterceptor["流式拦截器 (Stream Interceptor)"]
-        StreamInterceptor --> QualityGate["质量门禁 (Quality Gate: YAML / 引用卡片 / 实体超链)"]
+        ContextReady --> LLMGateway["模型网关 (DeepSeek-V3 / SiliconFlow，流式 + include_usage)"]
+        LLMGateway --> HeadGate["流头拦截 (文档技能 frontmatter 契约判定；违约一次修正重试)"]
+        HeadGate --> QualityGate["流后全文门禁 (quote 前缀剥离 / 实体超链回填 → message.final 终稿同步)"]
     end
 
     subgraph SSEStream ["标准 SSE 流式推送"]
-        QualityGate --> SSE_Events["SSE: thinking.delta / message.delta / tool.progress / artifact.suggested"]
+        QualityGate --> SSE_Events["SSE: message.delta / message.final / artifact.suggested / run.error / run.finished(status)"]
     end
 
-    subgraph BackgroundWorker ["异步反思与活体记忆"]
-        SSE_Events --> StreamDone["流完成事件 (Stream Done)"]
-        StreamDone --> CRMWorker["Workplace CRM Worker (异步抽取人物画像与 Pattern)"]
-        CRMWorker --> EvidenceDB[(PostgreSQL / Drizzle: evidence & person_models)]
-        CRMWorker --> MemoryCandidate["推流: memory.candidate"]
+    subgraph BackgroundWorker ["反思与活体记忆（仅成功回合）"]
+        SSE_Events --> Outcome["终态裁决 classifyRunOutcome"]
+        Outcome --> CRMWorker["Workplace CRM Worker (LLM 语义抽取；失败即空产出，不编造)"]
+        CRMWorker --> PendingCand[(memory_candidates · 一律 pending)]
+        PendingCand --> Confirm["用户点击确认 (confirmMemoryToDatabase 事务)"]
+        Confirm --> EvidenceDB[(PostgreSQL: evidence & person_models)]
     end
 ```
 
@@ -113,9 +110,8 @@ export interface JevDecision {
   need_tool: boolean;
 
   /** 
-   * 任务复杂度与紧急度评分 (0 ~ 100)
-   * >= 60: 触发任务规划引擎，生成 todoList 并维持状态机
-   * < 60: 直接执行
+   * 任务复杂度评分 (0 ~ 100)
+   * 注：score >= 60 曾触发任务规划状态机；该模块因实现为硬编码假进度已于 2026-09 移除
    */
   score: number;
 
@@ -190,114 +186,124 @@ PANGBAI 专为“既要出高质量文档、又要应对职场人情博弈”的
 5. **Active Canvas TOC 切片（Drawer 3）**（仅加载大纲与聚焦段落，$\approx 800$ Tokens）。
 
 ### 5.2 Compress（压缩与剪裁机制）
-1. **Offload（超长剪裁，阈值 20K Tokens）**：
-   - 当单次工具返回或参考资料大于 20,000 Tokens 时，系统**自动将其写入独立临时文件（Scratchpad）**；
-   - 上下文中仅保留：`[超长资料已归档至: /scratch/doc_xxx.md] 前 10 行预览如下...`，大模型需要深读时自主调阅。
-2. **主动摘要（Active Summarization Middleware，主力）**：
-   - 当多轮对话轮数超过 6 轮，或用户完成了“PRD 大纲敲定 $\rightarrow$ 开始细化功能”的重大阶段转变时，Agent 自主触发上下文摘要，提炼为结构化阶段备忘录。
-3. **保底自动摘要（85% Context Fallback）**：
-   - 当上下文占用达到模型总窗口的 85% 时，Harness 底层安全网自动拦截并强制压缩历史 messages，保留首尾关键轮次与 TodoList 状态，绝不允许 API 抛出 400 Context Overflow 异常。
+1. **诚实截断（单文档预算，阈值 20K Tokens 估算）**：
+   - 当单个文档（目前仅 Drawer 3 的 Canvas 活文档）估算超过 20,000 Tokens 时，保留头部 40 行 + 尾部 20 行，中段以显式标注省略（`中段约 N 行已省略，未做任何摘要归纳`）；
+   - 不落盘临时文件——模型没有工具能把落盘内容读回来，"自主调阅"不会发生。
+2. **历史预算裁剪（Prune，阈值 12K Tokens 估算）**：
+   - 历史消息估算超预算时，保留首轮背景 + 最新 4 条，中间轮替换为**逐轮中性存根**（每轮前 40 字符 + "不代表任何共识"声明）；
+   - 不使用固定文案宣称"已达成共识"——那是对模型的欺骗。
+3. **估算器**：CJK 感知启发式（中日韩 1 token/字，其余 4 字符/token）；trace 侧优先记录 provider 经 `stream_options.include_usage` 返回的真实 usage。
+4. **客户端历史**：assistant 历史发送真实正文（每轮截断 500 字符），不再压成固定占位串。
+
+【路线图，未实现】阶段转变触发的自主摘要（Active Summarization）、模型窗口占比探测的动态水位。
 
 ---
 
-## 六、 任务规划状态机（Planning & State Isolation）
+## 六、 任务规划状态机（Planning & State Isolation）——已移除
 
-### 6.1 状态隔离铁律
-> **任务清单绝不能进 messages！**
+**状态：已移除（2026-09）。** 曾实现的 `planning-state.ts` 存在不可接受的诚实性问题：
+`generateInitialTodoList` 以 `void userQuery` 丢弃用户输入、返回按技能硬编码的模板，且
+`step_1` 恒为 `completed`、`step_2` 恒为 `in_progress`——这是伪造的进度，不是规划；
+`PLANNING_STORE` 为模块级内存 Map，唯一外部引用是 chat 路由的一次写入，从不读回，
+重启即失；todoList 无任何 SSE 事件或 UI 消费者，仅注入 prompt 对模型撒谎。
 
-```typescript
-export interface AgentState {
-  sessionId: string;
-  projectId?: string;
-  /** 
-   * 独立的任务清单状态 Key，与 messages 严格物理隔离！
-   * 任何上下文摘要/剪裁机制均不可触碰该 Key！
-   */
-  todoList: Array<{
-    id: string;
-    task: string;
-    status: "pending" | "in_progress" | "completed" | "failed";
-    deliverable?: string;
-  }>;
-  /** 活跃技能 */
-  activeSkill?: string;
-  /** 复杂度判定分 */
-  complexityScore: number;
-}
-```
+原设计文档宣称的以下能力均为【路线图，未实现】，待有真实执行通道（多步工具调用）时再评估：
+- 任务清单作为 Agent State 独立 Key 隔离存储；
+- 子任务失败后在保留已完成步骤的前提下动态调整后续步骤并重试（Replanning）。
 
-### 6.2 动态重规划（Replanning）
-如果子任务在执行时由于输入不完整、或者上游干系人信息缺失导致失败，Harness 允许在保留已完成步骤的前提下，动态调整 `todoList` 后续步骤并重试，而不是让整个会话崩溃。
+PANGBAI 当前是无状态单发建议者，回合内没有可被规划的"执行"——删除假进度比保留摆设更诚实。
 
 ---
 
 ## 七、 流式质量门禁与契约拦截（Quality Gate & Format Interceptor）
 
-为了彻底杜绝模型“口头承诺在右侧生成，实际啥也没出”或“乱用引用语法导致前端渲染崩溃”，Harness 实施三道质量门禁：
+为了彻底杜绝模型“口头承诺在右侧生成，实际啥也没出”或“乱用引用语法导致前端渲染崩溃”，Harness 实施四道质量门禁：
 
-| 门禁类型 | 校验规则 | 违规修正动作 |
-|---|---|---|
-| **Canvas YAML 门禁** | 当命中文档类技能（`prd_generator` / `canvas_doc_writer`）时，正文头部必须包含标准的 `--- ... ---` YAML Frontmatter | 若模型遗漏或格式损坏，拦截器自动补全 Frontmatter 头部并补齐 `type` 与 `title` |
-| **引用卡片门禁** | `> "..."` 语法**仅且只能**用于输出“可直接复制给领导/同事的沟通话术” | 若模型在 `>` 中输出导师自己的寒暄或大段分析，拦截器剥离 `>` 符号降级为普通正文 |
-| **实体超链门禁** | 提到数据库中已有人物必须使用 `[姓名](person:ID)`，提到历史事件必须使用 `[事件描述](evidence:ID)` | 拦截器根据上下文中的实体字典，自动回填 Markdown 超链接，确保前端可点击穿透 |
+| 门禁类型 | 时机 | 校验规则 | 违规修正动作 |
+|---|---|---|---|
+| **流头拦截（headGateCheck）** | 流式最初几个 delta 内 | 文档技能输出的去空白首部必须可能构成 `---\n` 分隔行 | 判定不可补全 → 取消上游 → **携带修正指令重试一次**（违约文本不触达用户）；重试仍违约 → 回退合成修复，终态记 `gate_retry_exhausted` |
+| **Canvas YAML 门禁** | 流结束后 | frontmatter 必须以 `FRONTMATTER_RE`（单一事实源，与服务端 parseFrontmatter、客户端 block-parser 同一正则）锚定全文开头 | 缺失 → 从正文标题合成最小合规头；**存在于但不在文首 → 原块迁移至文首**（不丢弃模型真实元数据） |
+| **引用卡片门禁** | 流结束后 | `>` 块不得以"我认为/我的建议是/首先/总的来说，"等导师分析前缀开头 | 剥离前缀词，保留话术本体 |
+| **实体超链门禁** | 流结束后 | 已知人物出现处应使用 `[姓名](person:ID)` | 按 people 表字典回填超链 |
+
+**终稿同步**：门禁改写文本后下发 `message.final` 事件（权威全文），客户端重置累积文本重新解析——保证**用户所见 == 落库文本 == artifact 内容**，三者永不分叉。
+
+**结构化报告**：`processOutput` 返回 `{ text, report: { violations, repairs, retried } }`，随 `tool.result`、`run.finished.metadata.gate`、`llmCallTraces.metadataJson` 全链路留底。
 
 ---
 
-## 八、 异步人物画像抽取引擎（Workplace CRM Worker）
+## 八、 人物画像抽取引擎（Workplace CRM Worker）
 
-彻底废除原本脆弱的 `confidence + 0.02` 正则硬编码，采用真后台语义抽取：
+彻底废除脆弱的 `confidence + 0.02` 正则硬编码与人名命中即编造证据的兜底，采用真后台语义抽取 + **用户确认闸门**：
 
 ```mermaid
 sequenceDiagram
     participant User as 用户交互
     participant Route as /api/chat 主通道
     participant SSE as 前端 SSE 流
-    participant Worker as Background CRM Worker
+    participant Worker as CRM Worker (仅成功回合)
     participant DB as PostgreSQL (Drizzle)
 
     User->>Route: 描述工作冲突 ("老李又在会上推诿前端改动")
-    Route->>SSE: 流式输出分析与体面回复话术
-    Route->>Worker: 异步投递本轮对话上下文 (非阻塞)
+    Route->>SSE: 流式输出 → run.finished(status) → memory.candidate 事件
+    Route->>Worker: 流终态后执行（失败/断连回合跳过）
     
     rect rgb(240, 248, 255)
-    Note over Worker: 后台轻量级推理分析
-    Worker->>Worker: 1. 识别涉事人员: 老李 (person_002)
-    Worker->>Worker: 2. 提炼行为模式: "关键节点推诿改动，规避技术风险"
-    Worker->>Worker: 3. 评估置信度与证据强度 (e.g. 0.82)
+    Note over Worker: LLM 轻量推理（4s 熔断）
+    Worker->>Worker: 识别涉事人员 + 提炼行为模式 + 置信度
+    Note over Worker: 抽取失败（超时/非200/解析失败）→ 本轮空产出，绝不编造
     end
 
-    Worker->>DB: 插入真实 evidence 记录
-    Worker->>DB: 更新 person_models (evidence_count + 1, last_observed_at)
-    Worker-->>SSE: 下发 memory.candidate 事件 (前端弹出置信度小蓝点)
+    Worker->>DB: 仅写 memory_candidates（一律 status=pending）
+    Worker-->>SSE: memory.candidate 事件（前端呈现 忽略✕/确认✓ 按钮）
+
+    User->>SSE: 点击 确认✓
+    SSE->>DB: POST /api/people/[id]/memory/confirm
+    DB->>DB: confirmMemoryToDatabase 事务（幂等）：<br/>candidate→confirmed + 插入 evidence + upsert person_models
 ```
+
+**纪律**：确认前不写任何 evidence / person_models——UI 的确认按钮是唯一晋升入口，不是摆设。代价是用户不确认则世界模型不生长，这是有意的产品取舍。
 
 ---
 
 ## 九、 SSE 事件流协议与客户端流控生命周期
 
-为无缝兼容前端现有的 `SSETransport` 与 `AgentSession`，后端必须输出规范的标准 SSE 流（`text/event-stream`）：
+后端输出标准 SSE 流（`text/event-stream`）。关键语义：
+
+- **终态语义**：`run.finished` 携带 `status`（success/aborted/failed）与 `finishReason`；失败回合先发 `run.error` 再发 `run.finished`。idle ≠ turn success。
+- **终稿同步**：门禁改写文本后下发 `message.final`（权威全文），客户端以终稿替换累积 delta。
+- **顺序**：`memory.candidate` 事件在 `run.finished` **之后**下发（CRM 反思不阻塞终态事件）。
 
 ```
 event: run.started
 data: {"type":"run.started","sessionId":"sess_123","messageId":"msg_456"}
 
-event: thinking.delta
-data: {"type":"thinking.delta","delta":"正在分析干系人老李的潜在顾虑与技术背景..."}
-
 event: tool.started
-data: {"type":"tool.started","toolCallId":"tc_001","toolName":"prd_generator","input":{"title":"用户增长裂变PRD"}}
+data: {"type":"tool.started","toolCallId":"tc_001","toolName":"prd_generator","input":{"score":85}}
 
 event: message.delta
-data: {"type":"message.delta","delta":"针对您目前遇到的排期被压情况，建议按照以下策略应对：\n\n"}
+data: {"type":"message.delta","messageId":"msg_456","delta":"---\ntitle: \"方案.md\"\n---\n"}
+
+event: message.final
+data: {"type":"message.final","messageId":"msg_456","text":"---\ntitle: \"方案.md\"\n---\n全文（门禁后权威版）"}
 
 event: artifact.suggested
-data: {"type":"artifact.suggested","title":"用户增长裂变方案.md","artifactType":"prd","content":"---\ntitle: ..."}
+data: {"type":"artifact.suggested","title":"方案.md","artifactType":"prd","content":"---\ntitle: ..."}
+
+event: tool.result
+data: {"type":"tool.result","toolCallId":"tc_001","status":"success","output":{"skill":"prd_generator","gate":{"violations":[],"repairs":[],"retried":false}}}
+
+event: run.finished
+data: {"type":"run.finished","status":"success","finishReason":"stop","usage":{"promptTokens":1420,"completionTokens":680,"totalTokens":2100},"metadata":{"gate":{...}}}
 
 event: memory.candidate
 data: {"type":"memory.candidate","personId":"person_002","personName":"老李","pattern":"排期防御型人格","confidence":0.85,"observation":"在评审会上强调工期不足拒绝新增埋点需求"}
 
+失败回合示例：
+event: run.error
+data: {"type":"run.error","error":"上游模型返回了空回复","code":"EMPTY_REPLY"}
 event: run.finished
-data: {"type":"run.finished","usage":{"promptTokens":1420,"completionTokens":680,"totalTokens":2100}}
+data: {"type":"run.finished","status":"failed","finishReason":"empty_reply","usage":{...}}
 ```
 
 
@@ -320,8 +326,7 @@ Agent 再智能，如果没有原始事实素材（群聊记录、会议纪要�
 
 事实录入后通过 Context Engine 的 **Drawer 4** 按需注入：
 - 按项目 ID 过滤，只加载最近 5 条事件
-- 每条事件仅注入标题 + 摘要（<= 150 Tokens），避免膨胀
-- 完整原文按需 Offload
+- 每条事件仅注入标题 + 摘要（200 字符预览），避免膨胀
 
 ---
 
@@ -329,36 +334,36 @@ Agent 再智能，如果没有原始事实素材（群聊记录、会议纪要�
 
 ```
 src/server/harness/
-├── jev-decision.ts              # [模块 1] Jev 毫秒级 TypeSafe 决策前置层
+├── jev-decision.ts              # [模块 1] Jev TypeSafe 决策前置层 (1200ms 熔断 → 启发式降级；密钥仅从环境变量读取)
 ├── skill-registry.ts            # [模块 2] 双轨制技能注册表与渐进式披露元数据
-├── context-engine.ts            # [模块 3] 上下文工程引擎 (Drawer 0~4 + Offload + 摘要)
-├── planning-state.ts            # [模块 4] 独立 Planning 状态机 (todoList 隔离存储)
-├── quality-gate.ts              # [模块 5] 流式质量门禁 (YAML / 引用卡片 / 实体链接修复)
-├── workplace-crm-worker.ts      # [模块 6] 异步真实人物画像提取与记忆候选下发
-├── event-ingestion-worker.ts    # [模块 7] 事实录入 Harness 反思管线
-└── index.ts                     # [统一导出] Harness 主入口与编排器
+├── context-engine.ts            # [模块 3] 上下文工程引擎 (Drawer 分层装配 + 诚实截断 + 中性存根裁剪)
+├── quality-gate.ts              # [模块 4] 流头拦截 + 流后全文门禁 (契约对齐 / 修正重试 / 结构化报告)
+├── workplace-crm-worker.ts      # [模块 5] 人物画像提取；一律 pending 候选，确认事务才落 evidence
+├── event-ingestion-worker.ts    # [模块 6] 事实录入 Harness 反思管线
+├── tokens.ts                    # [模块 7] CJK 感知 token 估算器
+├── run-outcome.ts               # [模块 8] 运行终态分类器 (idle != turn success)
+├── sse-emitter.ts               # [模块 9] SSE 安全发射器 (断连吞错，防异常穿透 start())
+└── index.ts                     # [统一导出] Harness 主入口
+# 注：planning-state.ts 已移除（见第六节）
 
 src/app/api/
 ├── events/
 │   ├── route.ts                 # GET (列表) + POST (录入群聊/会议/评审/事件)
 │   └── [id]/route.ts            # GET (单条详情) + DELETE
 ├── projects/
-│   └── route.ts                 # GET + POST (扩展: milestones/stakeholders/risks 完整初始化)
+│   └── route.ts                 # GET + POST
 └── chat/
-    └── route.ts                 # Harness 主通道
+    └── route.ts                 # Harness 主通道 (终态语义 + 流头门禁 + 断连级联 + 真实 usage)
 ```
 
 ---
 
 ## 十二、 飞书（Feishu CLI & Skill）与 Jev 决策层双重身份集成架构
 
-### 12.1 Jev 官方 System One 决策层深度接入
-系统已废弃本地粗糙正则，直接通过 TypeSafe 官方 System One 决策 API (`POST https://api.typesafe.ai/v1/systemone`) 进行强类型判定：
-- `choice`: 从 11 项双轨技能（PRD、Canvas、局势分析、甄嬛借力打力、飞书同步等）中完成纳秒级路由；
-- `is_complex`: 返回连续概率值计算任务复杂度分值；
-- `need_tool`: 自动识别是否需调用飞书同步或数据库工具。
+### 12.1 Jev 官方 System One 决策层接入
+优先通过 TypeSafe 官方 System One 决策 API (`POST https://api.typesafe.ai/v1/systemone`) 判定，**1200ms 熔断**；API 不可用（超时/非 200/未配置 `JEV_API_KEY`）时降级为本地正则启发式路由（`evaluateHeuristic`），两者共存而非替代关系。密钥仅从环境变量读取，缺失时 warn-once 后直接走启发式，无内置兜底密钥。
 
-### 12.2 飞书双重身份接入模型（Bot vs User OAuth）
+### 12.2 飞书双重身份接入模型（Bot vs User OAuth）【路线图，未实现】
 
 飞书官方维护的 `lark-cli` 是专为 Humans + AI Agents 打造的核心基础设施。在 PANGBAI 架构中，系统正式确立**双重身份访问模型**：
 
@@ -381,5 +386,5 @@ src/app/api/
 | **历史消息搜索** | 仅限单一会话 | 支持跨会话全局搜索 (`+messages-search`) |
 | **典型应用场景** | 团队公共周会结论、产研大群沟通同步 | 关键干系人私聊排期博弈、领导一对一指导、私下利益摸底 |
 
-### 12.3 飞书素材直接接入 Harness 事实反思管线
+### 12.3 飞书素材直接接入 Harness 事实反思管线【路线图，未实现】
 通过 `POST /api/feishu/sync`，无论是群聊还是 P2P 单聊，均会自动被格式化为标准对话时间线，一键输入 `runEventIngestionPipeline`，完成人物画像自动建档、行为模式归纳、会议待办与排期风险提取。
