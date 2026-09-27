@@ -70,3 +70,21 @@ export function classifyRunOutcome(input: RunOutcomeInput): RunOutcome {
 
   return { status: "success", finishReason: "stop" };
 }
+
+/**
+ * 面向客户端的错误文案：只输出按 finishReason 归类的固定话术，
+ * 绝不透传底层异常字符串（可能含内部端点、堆栈或网关响应片段）。
+ * 原始 errorMessage 仅供服务端日志与 trace metadataJson 使用。
+ */
+export function clientVisibleErrorMessage(outcome: RunOutcome): string {
+  switch (outcome.finishReason) {
+    case "client_disconnect":
+      return "客户端已断开连接";
+    case "empty_reply":
+      return "上游模型返回了空回复，请重试";
+    case "upstream_error":
+      return "上游模型服务连接异常，本轮回复中断";
+    default:
+      return "流式生成中断";
+  }
+}

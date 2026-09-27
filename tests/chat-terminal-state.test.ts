@@ -51,6 +51,7 @@ interface StreamEvent {
   status?: string;
   finishReason?: string;
   code?: string;
+  error?: string;
   delta?: string;
   usage?: { promptTokens?: number; completionTokens?: number; totalTokens?: number };
 }
@@ -161,6 +162,9 @@ test("mid-stream upstream error persists partial reply and a failed trace", asyn
   const errorEvent = events.find((e) => e.type === "run.error");
   assert.ok(errorEvent);
   assert.equal(errorEvent.code, "UPSTREAM_READ");
+  // 脱敏：客户端只见归档文案，不透传底层异常字符串
+  assert.doesNotMatch(errorEvent.error ?? "", /upstream exploded/);
+  assert.match(errorEvent.error ?? "", /连接异常/);
   const finished = events.find((e) => e.type === "run.finished");
   assert.ok(finished);
   assert.equal(finished.status, "failed");
@@ -172,6 +176,8 @@ test("mid-stream upstream error persists partial reply and a failed trace", asyn
   const traceRows = await loadTrace(sessionId);
   assert.equal(traceRows[0].status, "failed");
   assert.match(traceRows[0].metadataJson ?? "", /upstream_error/);
+  // 原始异常信息保留在服务端 trace，供排障
+  assert.match(traceRows[0].metadataJson ?? "", /upstream exploded/);
 });
 
 test("final usage chunk with empty choices populates usage and is not parsed as a delta", async () => {

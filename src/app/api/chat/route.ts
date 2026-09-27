@@ -13,6 +13,7 @@ import {
   USER_SELF_PERSON_ID,
   PREFERENCE_KIND_LABELS,
   classifyRunOutcome,
+  clientVisibleErrorMessage,
   createSseEmitter,
   estimateTokens,
   isDocSkill,
@@ -443,7 +444,8 @@ export async function POST(req: NextRequest) {
         if (outcome.status !== "success") {
           emitter.emit("run.error", {
             type: "run.error",
-            error: outcome.errorMessage ?? "流式生成中断",
+            // 客户端只见按 finishReason 归类的固定文案；原始异常仅进日志与 trace
+            error: clientVisibleErrorMessage(outcome),
             code: outcome.errorCode ?? outcome.finishReason,
             timestamp: Date.now(),
           });
@@ -566,6 +568,8 @@ export async function POST(req: NextRequest) {
               jevChoice: jevDecision.choice,
               jevScore: jevDecision.score,
               finishReason: outcome.finishReason,
+              // 原始异常信息只落服务端 trace，不透传客户端
+              errorMessage: outcome.errorMessage ?? null,
               usageSource: capturedUsage ? "provider" : "estimated",
               gate: gateReport,
             }),
